@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
+    <!-- Service contracts -->
+    <preference for="PixelPerfect\DiscountExclusion\Api\DiscountExclusionManagerInterface"
+                type="PixelPerfect\DiscountExclusion\Service\DiscountExclusionManager"/>
+
+    <!-- Configure discount validator -->
+    <type name="Magento\SalesRule\Model\Validator\Pool">
+        <arguments>
+            <argument name="validators" xsi:type="array">
+                <item name="discount_exclusion" xsi:type="object">
+                    \PixelPerfect\DiscountExclusion\Model\Validator\DiscountValidator
+                </item>
+            </argument>
+        </arguments>
+    </type>
+
+    <!-- Configure strategies -->
+    <type name="PixelPerfect\DiscountExclusion\Service\DiscountExclusionManager">
+        <arguments>
+            <argument name="strategies" xsi:type="array">
+                <item name="special_price" xsi:type="object">PixelPerfect\DiscountExclusion\Model\Strategy\SpecialPriceStrategy</item>
+                <item name="catalog_rule" xsi:type="object">PixelPerfect\DiscountExclusion\Model\Strategy\CatalogRuleStrategy</item>
+            </argument>
+        </arguments>
+    </type>
+</config>

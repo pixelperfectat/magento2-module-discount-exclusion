@@ -1,0 +1,43 @@
+{
+    "name": "pixelperfectat/magento2-module-discount-exclusion",
+    "description": "Advanced Magento 2 module for preventing additional discounts on already discounted products using a flexible, extensible strategy pattern. Provides out-of-the-box support for excluding products with special prices or catalog price rules from further discounting via shopping cart rules.",
+    "type": "magento2-module",
+    "license": "MIT",
+    "version": "1.0.0",
+    "authors": [
+        {
+            "name": "André Flitsch",
+            "email": "pixelhed@pixelperfect.at",
+            "role": "Developer"
+        }
+    ],
+    "support": {
+        "email": "pixelhed@pixelperfect.at",
+        "issues": "https://github.com/pixelperfectat/magento2-module-discount-exclusion/issues"
+    },
+    "require": {
+        "php": "^8.2.0",
+        "magento/framework": "^103.0",
+        "magento/module-catalog": "^104.0",
+        "magento/module-sales-rule": "^101.0"
+    },
+    "autoload": {
+        "files": [
+            "src/registration.php"
+        ],
+        "psr-4": {
+            "PixelPerfect\\DiscountExclusion\\": "src"
+        }
+    },
+  "repositories": [
+    {
+        "type": "composer",
+        "url": "https://repo.magento.com/"
+    }
+  ],
+    "config": {
+        "allow-plugins": {
+            "magento/composer-dependency-version-audit-plugin": true
+        }
+    }
+}
