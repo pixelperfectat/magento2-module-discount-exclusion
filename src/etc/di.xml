@@ -26,4 +26,12 @@
             </argument>
         </arguments>
     </type>
+
+    <!-- Proxies -->
+    <type name="PixelPerfect\DiscountExclusion\Model\Validator\DiscountValidator">
+        <arguments>
+            <argument name="checkoutSession" xsi:type="object">Magento\Checkout\Model\Session\Proxy</argument>
+        </arguments>
+    </type>
+
 </config>
