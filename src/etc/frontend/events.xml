@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:Event/etc/events.xsd">
+
+    <event name="controller_action_postdispatch_checkout_cart_couponPost">
+        <observer name="discount_exclusion_coupon_post" instance="PixelPerfect\DiscountExclusion\Observer\CouponPostObserver"/>
+    </event>
+</config>
