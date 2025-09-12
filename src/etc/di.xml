@@ -3,6 +3,8 @@
     <!-- Service contracts -->
     <preference for="PixelPerfect\DiscountExclusion\Api\DiscountExclusionManagerInterface"
                 type="PixelPerfect\DiscountExclusion\Service\DiscountExclusionManager"/>
+    <preference for="PixelPerfect\DiscountExclusion\Api\MessageProcessorInterface"
+                type="PixelPerfect\DiscountExclusion\Service\MessageProcessor"/>
 
     <!-- Configure discount validator -->
     <type name="Magento\SalesRule\Model\Validator\Pool">
@@ -29,6 +31,11 @@
 
     <!-- Proxies -->
     <type name="PixelPerfect\DiscountExclusion\Model\Validator\DiscountValidator">
+        <arguments>
+            <argument name="checkoutSession" xsi:type="object">Magento\Checkout\Model\Session\Proxy</argument>
+        </arguments>
+    </type>
+    <type name="PixelPerfect\DiscountExclusion\Service\MessageProcessor">
         <arguments>
             <argument name="checkoutSession" xsi:type="object">Magento\Checkout\Model\Session\Proxy</argument>
         </arguments>
