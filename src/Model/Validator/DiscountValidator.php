@@ -38,17 +38,22 @@ class DiscountValidator implements ValidatorInterface
             return true;
         }
 
-        // Get the current rule being processed from the quote
-        $rule = $value->getQuote()->getSalesRule();
+        // Check if the item is a child of a complex item
+        /** @var Item $value */
+        if ($value->getParentItem()) {
+            return false;
+        }
 
-        // Allow free shipping rules
-        if ($rule && $rule->getSimpleFreeShipping()) {
-            return true;
+        // either a simple item or a complex item
+        $product = $value->getProduct();
+        $children = $value->getChildren();
+        if (count($children) > 0 && $value->getChildren()[0]->getProduct()) {
+            $product = $value->getChildren()[0]->getProduct();
         }
 
         // Check if the product should be excluded from additional discounts
         $shouldExclude = $this->discountExclusionManager->shouldExcludeFromDiscount(
-            $value->getProduct(),
+            $product,
             $value
         );
 
