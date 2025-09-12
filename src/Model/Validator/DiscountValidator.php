@@ -3,8 +3,15 @@
 namespace PixelPerfect\DiscountExclusion\Model\Validator;
 
 use Laminas\Validator\ValidatorInterface;
+use Magento\Checkout\Model\Session;
+use Magento\Framework\App\RequestInterface;
+use Magento\Quote\Model\Quote\Item;
 use Magento\Quote\Model\Quote\Item\AbstractItem;
 use PixelPerfect\DiscountExclusion\Api\DiscountExclusionManagerInterface;
+use Magento\Framework\Message\ManagerInterface;
+use Magento\Framework\Message\MessageInterface;
+use PixelPerfect\DiscountExclusion\Model\MessageGroups;
+use PixelPerfect\DiscountExclusion\Model\SessionKeys;
 
 class DiscountValidator implements ValidatorInterface
 {
@@ -14,7 +21,10 @@ class DiscountValidator implements ValidatorInterface
     private array $messages = [];
 
     public function __construct(
-        private readonly DiscountExclusionManagerInterface $discountExclusionManager
+        private readonly DiscountExclusionManagerInterface $discountExclusionManager,
+        private ManagerInterface $messageManager,
+        private readonly RequestInterface $request,
+        private readonly Session $checkoutSession
     ) {
     }
 
@@ -58,12 +68,44 @@ class DiscountValidator implements ValidatorInterface
         );
 
         if ($shouldExclude) {
-            $this->messages['discount_exclusion'] = __(
-                'Product "%1" cannot receive additional discounts because it is already discounted.',
-                $value->getProduct()->getName()
-            )->render();
+            $productId = $product->getId();
+
+            // Get processed product IDs from session
+            $processedProductIds = $this->checkoutSession->getData(SessionKeys::PROCESSED_PRODUCT_IDS) ?: [];
+
+            // Only add message if we haven't already processed this product
+            if (!isset($processedProductIds[$productId])) {
+                // Get the coupon code from the request
+                $couponCode = $this->request->getParam('coupon_code', '');
+
+                $message = $couponCode ?
+                    __(
+                        'Coupon %2 was not applied to Product "%1" because it is already discounted.',
+                        $value->getProduct()->getName(),
+                        $couponCode
+                    ) :
+                    __(
+                        'Product "%1" it is already discounted, and cannot be discounted again.',
+                        $value->getProduct()->getName()
+                    );
+
+                $this->messages[MessageGroups::DISCOUNT_EXCLUSION] = $message->render();
+
+                // Add to MessageManager with group (only once per product)
+                $this->messageManager->addMessage(
+                    $this->messageManager->createMessage(MessageInterface::TYPE_ERROR)->setText($message->render()),
+                    MessageGroups::DISCOUNT_EXCLUSION
+                );
+
+                // Mark this product as processed
+                $processedProductIds[$productId] = true;
+                $this->checkoutSession->setData(SessionKeys::PROCESSED_PRODUCT_IDS, $processedProductIds);
+            }
+
             return false;
         }
+
+
 
         return true;
     }
