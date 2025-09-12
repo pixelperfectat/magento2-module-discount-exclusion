@@ -8,8 +8,10 @@
     <type name="Magento\SalesRule\Model\Validator\Pool">
         <arguments>
             <argument name="validators" xsi:type="array">
-                <item name="discount_exclusion" xsi:type="object">
-                    \PixelPerfect\DiscountExclusion\Model\Validator\DiscountValidator
+                <item name="discount" xsi:type="array">
+                    <item name="discount_exclusion" xsi:type="object">
+                        \PixelPerfect\DiscountExclusion\Model\Validator\DiscountValidator
+                    </item>
                 </item>
             </argument>
         </arguments>
