@@ -12,25 +12,18 @@ use PixelPerfect\DiscountExclusion\Api\DiscountExclusionStrategyInterface;
  */
 class SpecialPriceStrategy implements DiscountExclusionStrategyInterface
 {
-    /**
-     * @inheritDoc
-     */
     public function shouldExcludeFromDiscount(
         ProductInterface|Product $product,
         AbstractItem             $item
     ): bool {
-        $specialPrice = null;
+        $specialPrice = $product->getSpecialPrice();
+        $finalPrice = $product->getFinalPrice();
 
-        // Get special price based on object type
-        if ($product instanceof Product) {
-            $specialPrice = $product->getSpecialPrice();
-        } elseif ($product->getCustomAttribute('special_price')) {
-            $specialPrice = $product->getCustomAttribute('special_price')->getValue();
+        // Ensure special price is active and not overridden by other mechanisms
+        if ($specialPrice && $specialPrice == $finalPrice) {
+            return true; // Exclude if special price applies directly
         }
 
-        // Check if product has a special price
-        return $specialPrice !== null
-            && $specialPrice > 0
-            && $specialPrice < $product->getPrice();
+        return false;
     }
 }
