@@ -22,6 +22,11 @@
     <!-- Configure strategies -->
     <type name="PixelPerfect\DiscountExclusion\Service\DiscountExclusionManager">
         <arguments>
+            <argument name="strategyEligibilityGuards" xsi:type="array">
+                <item name="ampromo" xsi:type="object">PixelPerfect\DiscountExclusion\Model\StrategyEligibilityGuards\Ampromo</item>
+                <item name="zero_price" xsi:type="object">PixelPerfect\DiscountExclusion\Model\StrategyEligibilityGuards\ZeroPrice</item>
+            </argument>
+
             <argument name="strategies" xsi:type="array">
                 <item name="special_price" xsi:type="object">PixelPerfect\DiscountExclusion\Model\Strategy\SpecialPriceStrategy</item>
                 <item name="catalog_rule" xsi:type="object">PixelPerfect\DiscountExclusion\Model\Strategy\CatalogRuleStrategy</item>

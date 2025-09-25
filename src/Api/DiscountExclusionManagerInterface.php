@@ -16,19 +16,14 @@ interface DiscountExclusionManagerInterface
      * Check if product should be excluded from discounts
      *
      * @param ProductInterface|Product $product
-     * @param AbstractItem $item
+     * @param AbstractItem             $item
+     * @param string|null              $couponCode
+     *
      * @return bool
      */
     public function shouldExcludeFromDiscount(
         ProductInterface|Product $product,
-        AbstractItem $item
+        AbstractItem $item,
+        ?string $couponCode = null
     ): bool;
-
-    /**
-     * Add a new strategy
-     *
-     * @param DiscountExclusionStrategyInterface $strategy
-     * @return void
-     */
-    public function addStrategy(DiscountExclusionStrategyInterface $strategy): void;
 }
