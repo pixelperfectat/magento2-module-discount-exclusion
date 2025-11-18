@@ -21,6 +21,7 @@ class ZeroPrice implements StrategyEligibilityGuardInterface
 {
     public function canProcess(ProductInterface|Product $product, AbstractItem $item, Rule $rule): bool
     {
+        /** @phpstan-ignore-next-line */
         return $product->getFinalPrice() > 0;
     }
 }

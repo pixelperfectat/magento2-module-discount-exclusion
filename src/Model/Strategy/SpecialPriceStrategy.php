@@ -16,7 +16,9 @@ class SpecialPriceStrategy implements DiscountExclusionStrategyInterface
         ProductInterface|Product $product,
         AbstractItem             $item
     ): bool {
+        /** @phpstan-ignore-next-line */
         $specialPrice = $product->getSpecialPrice();
+        /** @phpstan-ignore-next-line */
         $finalPrice = $product->getFinalPrice();
 
         // Ensure special price is active and not overridden by other mechanisms
