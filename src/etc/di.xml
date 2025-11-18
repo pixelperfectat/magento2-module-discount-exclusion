@@ -6,17 +6,11 @@
     <preference for="PixelPerfect\DiscountExclusion\Api\MessageProcessorInterface"
                 type="PixelPerfect\DiscountExclusion\Service\MessageProcessor"/>
 
-    <!-- Configure discount validator -->
-    <type name="Magento\SalesRule\Model\Validator\Pool">
-        <arguments>
-            <argument name="validators" xsi:type="array">
-                <item name="discount" xsi:type="array">
-                    <item name="discount_exclusion" xsi:type="object">
-                        \PixelPerfect\DiscountExclusion\Model\Validator\DiscountValidator
-                    </item>
-                </item>
-            </argument>
-        </arguments>
+    <!-- Configure discount validator plugin -->
+    <type name="Magento\SalesRule\Model\Validator">
+        <plugin name="discount_exclusion_validator"
+                type="PixelPerfect\DiscountExclusion\Plugin\SalesRule\Model\ValidatorPlugin"
+                sortOrder="10"/>
     </type>
 
     <!-- Configure strategies -->
@@ -35,7 +29,7 @@
     </type>
 
     <!-- Proxies -->
-    <type name="PixelPerfect\DiscountExclusion\Model\Validator\DiscountValidator">
+    <type name="PixelPerfect\DiscountExclusion\Plugin\SalesRule\Model\ValidatorPlugin">
         <arguments>
             <argument name="checkoutSession" xsi:type="object">Magento\Checkout\Model\Session\Proxy</argument>
         </arguments>
