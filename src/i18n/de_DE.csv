@@ -1,2 +1,7 @@
 "Coupon %2 was not applied to Product ""%1"" because it is already discounted.","Gutscheincode %2 wurde nicht auf Produkt ""%1"" angewendet, da es bereits reduziert ist."
 "Product ""%1"" it is already discounted, and cannot be discounted again.","Produkt ""%1"" ist bereits reduziert und kann nicht erneut reduziert werden."
+"Discount Exclusion","Rabattausschluss"
+"General","Allgemein"
+"Enable Module","Modul aktivieren"
+"Enable or disable the discount exclusion functionality","Aktivieren oder deaktivieren Sie die Rabattausschlussfunktion"
+"Discount Exclusion Configuration","Rabattausschluss-Konfiguration"

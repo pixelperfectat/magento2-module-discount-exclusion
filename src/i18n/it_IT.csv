@@ -1,2 +1,7 @@
 "Coupon %2 was not applied to Product""%1"" because it is already discounted.","Il coupon %2 non è stato applicato al prodotto ""%1"" perché è già scontato."
 "Product ""%1"" it is already discounted, and cannot be discounted again.","Il prodotto ""%1"" è già scontato e non può essere scontato di nuovo."
+"Discount Exclusion","Esclusione Sconto"
+"General","Generale"
+"Enable Module","Abilita Modulo"
+"Enable or disable the discount exclusion functionality","Abilita o disabilita la funzionalità di esclusione sconto"
+"Discount Exclusion Configuration","Configurazione Esclusione Sconto"
