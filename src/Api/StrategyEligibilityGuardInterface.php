@@ -10,6 +10,7 @@ namespace PixelPerfect\DiscountExclusion\Api;
 use Magento\Catalog\Api\Data\ProductInterface;
 use Magento\Catalog\Model\Product;
 use Magento\Quote\Model\Quote\Item\AbstractItem;
+use Magento\SalesRule\Model\Rule;
 
 /**
  * Interface for precondition checks for discount exclusion strategies
@@ -19,6 +20,6 @@ interface StrategyEligibilityGuardInterface
     public function canProcess(
         ProductInterface|Product $product,
         AbstractItem $item,
-        ?string $couponCode
+        Rule $rule
     ): bool;
 }
