@@ -9,6 +9,7 @@ namespace PixelPerfect\DiscountExclusion\Model\StrategyEligibilityGuards;
 use Magento\Catalog\Api\Data\ProductInterface;
 use Magento\Catalog\Model\Product;
 use Magento\Quote\Model\Quote\Item\AbstractItem;
+use Magento\SalesRule\Model\Rule;
 use PixelPerfect\DiscountExclusion\Api\StrategyEligibilityGuardInterface;
 
 /**
@@ -18,8 +19,7 @@ use PixelPerfect\DiscountExclusion\Api\StrategyEligibilityGuardInterface;
  */
 class ZeroPrice implements StrategyEligibilityGuardInterface
 {
-
-    public function canProcess(ProductInterface|Product $product, AbstractItem $item, ?string $couponCode): bool
+    public function canProcess(ProductInterface|Product $product, AbstractItem $item, Rule $rule): bool
     {
         return $product->getFinalPrice() > 0;
     }

@@ -9,9 +9,7 @@ namespace PixelPerfect\DiscountExclusion\Model\StrategyEligibilityGuards;
 use Magento\Catalog\Api\Data\ProductInterface;
 use Magento\Catalog\Model\Product;
 use Magento\Quote\Model\Quote\Item\AbstractItem;
-use Magento\SalesRule\Api\Data\CouponInterface;
-use Magento\SalesRule\Api\RuleRepositoryInterface;
-use Magento\SalesRule\Model\Coupon;
+use Magento\SalesRule\Model\Rule;
 use PixelPerfect\DiscountExclusion\Api\StrategyEligibilityGuardInterface;
 
 /**
@@ -21,24 +19,11 @@ use PixelPerfect\DiscountExclusion\Api\StrategyEligibilityGuardInterface;
  */
 class Ampromo implements StrategyEligibilityGuardInterface
 {
-
-    public function __construct(
-        private readonly CouponInterface  $coupon,
-        private readonly RuleRepositoryInterface $ruleRepository
-    ) {
-    }
-
-    public function canProcess(ProductInterface|Product $product, AbstractItem $item, ?string $couponCode): bool
+    public function canProcess(ProductInterface|Product $product, AbstractItem $item, Rule $rule): bool
     {
-        if ($couponCode) {
-            /** @var CouponInterface|Coupon $coupon */
-            $coupon = $this->coupon->loadByCode($couponCode);
-            $rule   = $this->ruleRepository->getById($coupon->getRuleId());
-
-            $simpleAction = $rule->getSimpleAction();
-            if ($simpleAction && str_contains($simpleAction, 'ampromo')) {
-                return false;
-            }
+        $simpleAction = $rule->getSimpleAction();
+        if ($simpleAction && str_contains($simpleAction, 'ampromo')) {
+            return false;
         }
 
         return true;
