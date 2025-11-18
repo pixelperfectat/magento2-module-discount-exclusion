@@ -5,6 +5,8 @@
                 type="PixelPerfect\DiscountExclusion\Service\DiscountExclusionManager"/>
     <preference for="PixelPerfect\DiscountExclusion\Api\MessageProcessorInterface"
                 type="PixelPerfect\DiscountExclusion\Service\MessageProcessor"/>
+    <preference for="PixelPerfect\DiscountExclusion\Api\ConfigInterface"
+                type="PixelPerfect\DiscountExclusion\Service\Config"/>
 
     <!-- Configure discount validator plugin -->
     <type name="Magento\SalesRule\Model\Validator">

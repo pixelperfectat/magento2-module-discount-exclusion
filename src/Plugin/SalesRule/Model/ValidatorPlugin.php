@@ -9,6 +9,7 @@ use Magento\Framework\Message\MessageInterface;
 use Magento\Quote\Model\Quote\Item\AbstractItem;
 use Magento\SalesRule\Model\Rule;
 use Magento\SalesRule\Model\Validator;
+use PixelPerfect\DiscountExclusion\Api\ConfigInterface;
 use PixelPerfect\DiscountExclusion\Api\DiscountExclusionManagerInterface;
 use PixelPerfect\DiscountExclusion\Model\MessageGroups;
 use PixelPerfect\DiscountExclusion\Model\SessionKeys;
@@ -16,6 +17,7 @@ use PixelPerfect\DiscountExclusion\Model\SessionKeys;
 class ValidatorPlugin
 {
     public function __construct(
+        private readonly ConfigInterface                   $config,
         private readonly DiscountExclusionManagerInterface $discountExclusionManager,
         private readonly ManagerInterface                  $messageManager,
         private readonly RequestInterface                  $request,
@@ -39,6 +41,11 @@ class ValidatorPlugin
         AbstractItem $item,
         Rule $rule
     ): Validator {
+        // Early exit if module is disabled
+        if (!$this->config->isEnabled($item->getStoreId())) {
+            return $proceed($item, $rule);
+        }
+
         // Skip child items of complex products
         if ($item->getParentItem()) {
             return $proceed($item, $rule);
