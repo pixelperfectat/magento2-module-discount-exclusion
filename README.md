@@ -19,12 +19,13 @@ This module uses an **Around Plugin** on `Magento\SalesRule\Model\Validator::pro
 
 ### The Flow
 
-1. **Plugin Interception**: When Magento processes a sales rule for a quote item, `ValidatorPlugin::aroundProcess()` intercepts the call.
-2. **Product Extraction**: The plugin identifies the actual product (handling configurable products by examining children).
-3. **Guard Evaluation**: Strategy Eligibility Guards run first to determine if exclusion logic should even be considered.
-4. **Strategy Evaluation**: If guards allow, Discount Exclusion Strategies check if the product already has a discount.
-5. **Decision**: If excluded, the plugin returns without calling `$proceed()`, blocking the discount. Otherwise, it calls `$proceed()` to allow normal discount processing.
-6. **User Feedback**: When a product is excluded, a message is displayed (with deduplication to avoid spam).
+1. **Module State Check**: Plugin checks if module is enabled for the current store view via admin configuration.
+2. **Plugin Interception**: When Magento processes a sales rule for a quote item, `ValidatorPlugin::aroundProcess()` intercepts the call.
+3. **Product Extraction**: The plugin identifies the actual product (handling configurable products by examining children).
+4. **Guard Evaluation**: Strategy Eligibility Guards run first to determine if exclusion logic should even be considered.
+5. **Strategy Evaluation**: If guards allow, Discount Exclusion Strategies check if the product already has a discount.
+6. **Decision**: If excluded, the plugin returns without calling `$proceed()`, blocking the discount. Otherwise, it calls `$proceed()` to allow normal discount processing.
+7. **User Feedback**: When a product is excluded, a message is displayed (with deduplication to avoid spam).
 
 ## Core Components
 
@@ -143,15 +144,20 @@ interface DiscountExclusionStrategyInterface
 
 ### Step-by-Step Process
 
-1. **Interception Point**:
+1. **Module State Check**:
+   - Plugin checks if module is enabled via `Config::isEnabled($item->getStoreId())`
+   - If disabled, immediately returns `$proceed()` to allow normal discount processing
+   - This provides a global kill switch without uninstalling the module
+
+2. **Interception Point**:
    - Plugin intercepts at `Magento\SalesRule\Model\Validator::process(AbstractItem $item, Rule $rule)`
    - This gives access to both the quote item and the sales rule being applied
 
-2. **Child Item Filtering**:
+3. **Child Item Filtering**:
    - Skip child items of configurable products (return `$proceed()` immediately)
    - Only process parent items or simple products
 
-3. **Product Identification**:
+4. **Product Identification**:
    ```php
    $product = $item->getProduct();
    $children = $item->getChildren();
@@ -160,23 +166,23 @@ interface DiscountExclusionStrategyInterface
    }
    ```
 
-4. **Guard Evaluation** (via `DiscountExclusionManager`):
+5. **Guard Evaluation** (via `DiscountExclusionManager`):
    - Each guard's `canProcess()` method is called sequentially
    - If **any** guard returns `false`, strategy evaluation is skipped entirely
    - The item remains eligible for the discount (return `$proceed()`)
 
-5. **Strategy Evaluation** (if guards allow):
+6. **Strategy Evaluation** (if guards allow):
    - Each strategy's `shouldExcludeFromDiscount()` method is called sequentially
    - **First** strategy that returns `true` triggers exclusion
    - Remaining strategies are not evaluated (short-circuit)
 
-6. **Exclusion Handling**:
+7. **Exclusion Handling**:
    - If excluded and not already processed:
      - Display error message: "Coupon X was not applied to Product Y because it is already discounted"
      - Mark product as processed in session (prevents duplicate messages)
    - Return `$subject` without calling `$proceed()` (blocks discount application)
 
-7. **Allow Handling**:
+8. **Allow Handling**:
    - If not excluded, call `$proceed($item, $rule)` to allow normal discount processing
 
 ## Extending the Module
@@ -366,7 +372,45 @@ public function shouldExcludeFromDiscount(
 
 ## Configuration
 
-All configuration is done via **dependency injection** (`etc/di.xml`). No admin panel configuration is required.
+The module provides both admin panel configuration and dependency injection configuration.
+
+### Admin Configuration
+
+Navigate to `Stores → Configuration → Sales → Discount Exclusion` to access module settings.
+
+**Available Settings:**
+
+| Setting | Scope | Default | Description |
+|---------|-------|---------|-------------|
+| Enable Module | Store View | Yes | Enables or disables the discount exclusion functionality |
+
+**Configuration Details:**
+- **Scope**: Store-view level (can be configured per store)
+- **Config Path**: `discount_exclusion/general/enabled`
+- **ACL Permission**: `PixelPerfect_DiscountExclusion::config`
+- **Behavior**: When disabled, the plugin immediately allows all discounts to proceed without evaluation
+- **Cache**: Uses Magento's system configuration cache
+
+**Programmatic Access:**
+```php
+use PixelPerfect\DiscountExclusion\Api\ConfigInterface;
+
+public function __construct(
+    private readonly ConfigInterface $config
+) {
+}
+
+public function someMethod(int $storeId): void
+{
+    if ($this->config->isEnabled($storeId)) {
+        // Module is enabled for this store
+    }
+}
+```
+
+### Dependency Injection Configuration
+
+Extension points (guards and strategies) are configured via **dependency injection** (`etc/di.xml`).
 
 ### Complete di.xml Example
 
@@ -426,6 +470,7 @@ All configuration is done via **dependency injection** (`etc/di.xml`). No admin 
 ```
 src/
 ├── Api/
+│   ├── ConfigInterface.php                      # Configuration service interface
 │   ├── DiscountExclusionManagerInterface.php    # Main manager interface
 │   ├── DiscountExclusionStrategyInterface.php   # Strategy interface
 │   ├── StrategyEligibilityGuardInterface.php    # Guard interface
@@ -444,16 +489,34 @@ src/
 │   ├── MessageGroups.php                        # Message group constants
 │   └── SessionKeys.php                          # Session key constants
 ├── Service/
+│   ├── Config.php                               # Configuration service implementation
 │   ├── DiscountExclusionManager.php            # Main business logic
 │   └── MessageProcessor.php                     # Message deduplication
-└── etc/
-    └── di.xml                                   # Dependency injection config
+├── etc/
+│   ├── acl.xml                                  # Admin ACL permissions
+│   ├── config.xml                               # Default configuration values
+│   ├── di.xml                                   # Dependency injection config
+│   └── adminhtml/
+│       └── system.xml                           # Admin configuration fields
+└── i18n/
+    ├── en_US.csv                                # English translations
+    ├── de_DE.csv                                # German translations
+    ├── it_IT.csv                                # Italian translations
+    ├── fr_FR.csv                                # French translations
+    └── es_ES.csv                                # Spanish translations
 ```
 
 ### Key Classes
 
+**Config** (`src/Service/Config.php`):
+- Implements `ConfigInterface`
+- Reads configuration from `ScopeConfigInterface`
+- Checks if module is enabled at store-view level
+- Uses config path: `discount_exclusion/general/enabled`
+
 **ValidatorPlugin** (`src/Plugin/SalesRule/Model/ValidatorPlugin.php`):
 - Intercepts `Magento\SalesRule\Model\Validator::process()`
+- Checks module enabled state before processing
 - Provides access to both quote item and sales rule
 - Delegates decision-making to `DiscountExclusionManager`
 - Handles message display and session-based deduplication
