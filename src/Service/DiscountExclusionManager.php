@@ -5,6 +5,7 @@ namespace PixelPerfect\DiscountExclusion\Service;
 use Magento\Catalog\Api\Data\ProductInterface;
 use Magento\Catalog\Model\Product;
 use Magento\Quote\Model\Quote\Item\AbstractItem;
+use Magento\SalesRule\Model\Rule;
 use PixelPerfect\DiscountExclusion\Api\DiscountExclusionManagerInterface;
 use PixelPerfect\DiscountExclusion\Api\DiscountExclusionStrategyInterface;
 use PixelPerfect\DiscountExclusion\Api\StrategyEligibilityGuardInterface;
@@ -30,11 +31,11 @@ class DiscountExclusionManager implements DiscountExclusionManagerInterface
     public function shouldExcludeFromDiscount(
         ProductInterface|Product $product,
         AbstractItem $item,
-        ?string $couponCode = null
+        Rule $rule
     ): bool {
         // Evaluate preconditions: if any fail then return false.
         foreach ($this->strategyEligibilityGuards as $strategyEligibilityGuard) {
-            if (!$strategyEligibilityGuard->canProcess($product, $item, $couponCode)) {
+            if (!$strategyEligibilityGuard->canProcess($product, $item, $rule)) {
                 return false;
             }
         }
