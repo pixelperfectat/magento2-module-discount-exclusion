@@ -2,26 +2,21 @@
 
 namespace PixelPerfect\DiscountExclusion\Plugin\SalesRule\Model;
 
-use Magento\Checkout\Model\Session;
-use Magento\Framework\App\RequestInterface;
-use Magento\Framework\Message\ManagerInterface;
-use Magento\Framework\Message\MessageInterface;
 use Magento\Quote\Model\Quote\Item\AbstractItem;
 use Magento\SalesRule\Model\Rule;
 use Magento\SalesRule\Model\Validator;
 use PixelPerfect\DiscountExclusion\Api\ConfigInterface;
 use PixelPerfect\DiscountExclusion\Api\DiscountExclusionManagerInterface;
-use PixelPerfect\DiscountExclusion\Model\MessageGroups;
-use PixelPerfect\DiscountExclusion\Model\SessionKeys;
+use PixelPerfect\DiscountExclusion\Api\ExclusionResultCollectorInterface;
+use Psr\Log\LoggerInterface;
 
 class ValidatorPlugin
 {
     public function __construct(
-        private readonly ConfigInterface                   $config,
-        private readonly DiscountExclusionManagerInterface $discountExclusionManager,
-        private readonly ManagerInterface                  $messageManager,
-        private readonly RequestInterface                  $request,
-        private readonly Session                           $checkoutSession
+        private readonly ConfigInterface                    $config,
+        private readonly DiscountExclusionManagerInterface  $discountExclusionManager,
+        private readonly ExclusionResultCollectorInterface  $resultCollector,
+        private readonly LoggerInterface                    $logger
     ) {
     }
 
@@ -52,14 +47,20 @@ class ValidatorPlugin
         }
 
         // Get the actual product (handle configurable products by checking children)
-        $product  = $item->getProduct();
-        $children = $item->getChildren();
-        if (count($children) > 0 && $children[0]->getProduct()) {
-            $product = $children[0]->getProduct();
-        }
+        $product = $this->getActualProduct($item);
 
-        // Get processed product IDs from session
-        $processedProductIds = $this->checkoutSession->getData(SessionKeys::PROCESSED_PRODUCT_IDS) ?: [];
+        // CRITICAL FIX: Get coupon code from the item's quote (same instance as controller)
+        $couponCode = $this->getCouponCode($item);
+
+        $this->logger->debug('DiscountExclusion: Processing item', [
+            'product_sku' => $product->getSku(),
+            'product_name' => $product->getName(),
+            'rule_id' => $rule->getId(),
+            'rule_name' => $rule->getName(),
+            'coupon_code' => $couponCode,
+            'final_price' => $product->getFinalPrice(),
+            'regular_price' => $product->getPrice(),
+        ]);
 
         // Check if the product should be excluded from additional discounts
         $shouldExclude = $this->discountExclusionManager->shouldExcludeFromDiscount(
@@ -69,40 +70,73 @@ class ValidatorPlugin
         );
 
         if ($shouldExclude) {
-            $productId = $product->getId();
+            $this->logger->info('DiscountExclusion: Blocking discount for product', [
+                'product_sku' => $product->getSku(),
+                'product_name' => $product->getName(),
+                'rule_id' => $rule->getId(),
+                'coupon_code' => $couponCode,
+            ]);
 
-            // Only add message if we haven't already processed this product
-            if (!isset($processedProductIds[$productId])) {
-                // Get the coupon code
-                $couponCode = $this->request->getParam('coupon_code');
-                if ($couponCode === null) {
-                    $couponCode = $this->checkoutSession->getQuote()->getCouponCode();
-                }
-
-                if ($couponCode !== null) {
-                    $message = __(
-                        'Coupon %2 was not applied to Product "%1" because it is already discounted.',
-                        $item->getProduct()->getName(),
-                        $couponCode
-                    );
-
-                    // Add to MessageManager with group (only once per product)
-                    $this->messageManager->addMessage(
-                        $this->messageManager->createMessage(MessageInterface::TYPE_ERROR)->setText($message->render()),
-                        MessageGroups::DISCOUNT_EXCLUSION
-                    );
-                }
-
-                // Mark this product as processed
-                $processedProductIds[$productId] = true;
-                $this->checkoutSession->setData(SessionKeys::PROCESSED_PRODUCT_IDS, $processedProductIds);
+            // Add to collector if we have a coupon code
+            if ($couponCode !== null && $couponCode !== '') {
+                $this->resultCollector->addExcludedItem(
+                    $item,
+                    (string) __('Product is already discounted'),
+                    $couponCode
+                );
+            } else {
+                $this->logger->warning('DiscountExclusion: No coupon code found, cannot track exclusion', [
+                    'product_sku' => $product->getSku(),
+                ]);
             }
 
             // Return subject without calling proceed - this blocks the discount
             return $subject;
         }
 
+        $this->logger->debug('DiscountExclusion: Allowing discount for product', [
+            'product_sku' => $product->getSku(),
+            'rule_id' => $rule->getId(),
+        ]);
+
         // Allow discount by calling proceed
         return $proceed($item, $rule);
+    }
+
+    /**
+     * Get the actual product (handle configurable products by using child product)
+     */
+    private function getActualProduct(AbstractItem $item): \Magento\Catalog\Model\Product
+    {
+        $product = $item->getProduct();
+        $children = $item->getChildren();
+
+        if (count($children) > 0 && $children[0]->getProduct()) {
+            $product = $children[0]->getProduct();
+        }
+
+        return $product;
+    }
+
+    /**
+     * Get the coupon code from the CORRECT quote instance
+     *
+     * CRITICAL: Must get from item's quote, not from session,
+     * to ensure we're using the same instance as the controller.
+     * The session proxy may return a different quote instance that
+     * doesn't have the coupon code set yet.
+     */
+    private function getCouponCode(AbstractItem $item): ?string
+    {
+        // Get from the item's quote - this is the SAME instance the controller uses
+        $quote = $item->getQuote();
+        if ($quote !== null) {
+            $couponCode = $quote->getCouponCode();
+            if ($couponCode !== null && $couponCode !== '') {
+                return $couponCode;
+            }
+        }
+
+        return null;
     }
 }
