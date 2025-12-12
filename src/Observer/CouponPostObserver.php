@@ -3,10 +3,12 @@
 namespace PixelPerfect\DiscountExclusion\Observer;
 
 use Magento\Checkout\Controller\Cart\CouponPost;
+use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Framework\Message\ManagerInterface;
+use Magento\Quote\Api\CartRepositoryInterface;
 use PixelPerfect\DiscountExclusion\Api\ExclusionResultCollectorInterface;
 use Psr\Log\LoggerInterface;
 
@@ -16,6 +18,8 @@ class CouponPostObserver implements ObserverInterface
         private readonly ExclusionResultCollectorInterface $resultCollector,
         private readonly ManagerInterface $messageManager,
         private readonly RequestInterface $request,
+        private readonly CheckoutSession $checkoutSession,
+        private readonly CartRepositoryInterface $quoteRepository,
         private readonly LoggerInterface $logger
     ) {
     }
@@ -54,6 +58,22 @@ class CouponPostObserver implements ObserverInterface
             'coupon_code' => $couponCode,
             'excluded_count' => count($excludedItems),
         ]);
+
+        // Check if any actual discount was applied
+        $quote = $this->checkoutSession->getQuote();
+        $discountAmount = abs((float) $quote->getShippingAddress()->getDiscountAmount());
+
+        $this->logger->debug('DiscountExclusion: Checking discount amount', [
+            'discount_amount' => $discountAmount,
+        ]);
+
+        // If no actual discount was applied (only €0 items received the coupon),
+        // remove the coupon from the quote so UI shows "Apply coupon" instead of "Cancel coupon"
+        if ($discountAmount < 0.01) {
+            $this->logger->info('DiscountExclusion: No actual discount applied, removing coupon from quote');
+            $quote->setCouponCode('')->collectTotals();
+            $this->quoteRepository->save($quote);
+        }
 
         // Clear ALL existing messages (including Magento's generic "coupon not valid" error)
         $this->messageManager->getMessages(true);
