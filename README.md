@@ -12,6 +12,7 @@ Status: Active development. APIs and behavior may change without backward compat
   - If exclusion strategies should run (Strategy Eligibility Guards).
   - Which exclusion strategies apply to a product.
 - Displays user-friendly messages explaining why coupons weren't applied to specific products.
+- Automatically removes coupon from cart when no actual discount was applied.
 
 ## Architecture Overview
 
@@ -25,11 +26,12 @@ This module uses an **Around Plugin** on `Magento\SalesRule\Model\Validator::pro
 4. **Guard Evaluation**: Strategy Eligibility Guards run first to determine if exclusion logic should even be considered.
 5. **Strategy Evaluation**: If guards allow, Discount Exclusion Strategies check if the product already has a discount.
 6. **Decision**: If excluded, the plugin returns without calling `$proceed()`, blocking the discount. Otherwise, it calls `$proceed()` to allow normal discount processing.
-7. **User Feedback**: When a product is excluded, a message is displayed (with deduplication to avoid spam).
+7. **Result Collection**: Excluded items are collected by `ExclusionResultCollector` during processing.
+8. **User Feedback**: After coupon application, `CouponPostObserver` displays consolidated messages for all excluded products.
 
 ## Core Components
 
-The module is built around two key extensible components:
+The module is built around several key extensible components:
 
 ### 1. Strategy Eligibility Guards
 
@@ -38,6 +40,7 @@ The module is built around two key extensible components:
 **When to use guards**:
 - Filter out special rule types (e.g., free gift promotions that shouldn't be blocked)
 - Skip zero-price items (no discount can apply)
+- Only apply to coupon-based rules (skip automatic promotions)
 - Check customer groups, store views, or date ranges
 - Validate product types or item states
 - Prevent strategy execution based on rule characteristics
@@ -66,10 +69,11 @@ interface StrategyEligibilityGuardInterface
 
 **Built-in Guards**:
 
-1. **ZeroPrice**: Skips exclusion logic for products with zero final price (no discount applicable)
+1. **CouponOnly**: Only applies exclusion logic to coupon-based rules. Automatic cart rules (no coupon required) proceed normally without exclusion checks.
    ```php
-   // Returns false if price is zero, preventing unnecessary strategy checks
-   return $product->getFinalPrice() > 0;
+   // Returns false for automatic rules (COUPON_TYPE_NO_COUPON)
+   // Returns true for specific coupon or auto-generated coupon rules
+   return $couponType !== Rule::COUPON_TYPE_NO_COUPON;
    ```
 
 2. **Ampromo**: Skips exclusion for "Amasty Free Gift" rules (those rules provide free items, not additional discounts)
@@ -80,6 +84,12 @@ interface StrategyEligibilityGuardInterface
        return false; // Don't block free gift rules
    }
    return true;
+   ```
+
+3. **ZeroPrice**: Skips exclusion logic for products with zero final price (no discount applicable)
+   ```php
+   // Returns false if price is zero, preventing unnecessary strategy checks
+   return $product->getFinalPrice() > 0;
    ```
 
 **Key Points**:
@@ -140,6 +150,42 @@ interface DiscountExclusionStrategyInterface
 - Strategies only run if all guards returned `true`
 - Strategies focus on "is this product already discounted?" logic
 
+### 3. Exclusion Result Collector
+
+**Purpose**: A singleton service that collects excluded items during quote processing, enabling consolidated message display after all items are processed.
+
+**Interface**:
+```php
+namespace PixelPerfect\DiscountExclusion\Api;
+
+interface ExclusionResultCollectorInterface
+{
+    public function addExcludedItem(AbstractItem $item, string $reason, string $couponCode): void;
+    public function hasExcludedItems(string $couponCode): bool;
+    public function hasAnyExcludedItems(): bool;
+    public function getExcludedItems(string $couponCode): array;
+    public function getCouponCodes(): array;
+    public function clear(): void;
+}
+```
+
+**Key Points**:
+- Collects excluded items per coupon code
+- Deduplicates by product ID (same product won't be added twice)
+- Cleared after messages are displayed
+
+### 4. Observers
+
+**CouponPostObserver**: Handles message display and coupon cleanup after coupon application
+- Listens to `controller_action_postdispatch_checkout_cart_couponPost`
+- Displays consolidated warning messages for all excluded products
+- Removes coupon from quote if no actual discount was applied (so UI shows "Apply coupon" instead of "Cancel coupon")
+- Clears Magento's generic error messages and replaces with specific exclusion messages
+
+**CartPageLoadObserver**: Clears session state on cart page load
+- Listens to `controller_action_predispatch_checkout_cart_index`
+- Clears processed product IDs from session to allow fresh message display
+
 ## How it works (detailed)
 
 ### Step-by-Step Process
@@ -177,13 +223,17 @@ interface DiscountExclusionStrategyInterface
    - Remaining strategies are not evaluated (short-circuit)
 
 7. **Exclusion Handling**:
-   - If excluded and not already processed:
-     - Display error message: "Coupon X was not applied to Product Y because it is already discounted"
-     - Mark product as processed in session (prevents duplicate messages)
+   - If excluded: add to `ExclusionResultCollector` for later message display
    - Return `$subject` without calling `$proceed()` (blocks discount application)
 
 8. **Allow Handling**:
    - If not excluded, call `$proceed($item, $rule)` to allow normal discount processing
+
+9. **Post-Processing** (via `CouponPostObserver`):
+   - After all items processed, observer checks for excluded items
+   - Displays consolidated warning message listing all excluded products
+   - If no actual discount was applied, removes coupon from quote
+   - Clears collector for next request
 
 ## Extending the Module
 
@@ -238,6 +288,7 @@ class CustomerGroupGuard implements StrategyEligibilityGuardInterface
     <arguments>
         <argument name="strategyEligibilityGuards" xsi:type="array">
             <!-- Built-in guards -->
+            <item name="coupon_only" xsi:type="object">PixelPerfect\DiscountExclusion\Model\StrategyEligibilityGuards\CouponOnly</item>
             <item name="ampromo" xsi:type="object">PixelPerfect\DiscountExclusion\Model\StrategyEligibilityGuards\Ampromo</item>
             <item name="zero_price" xsi:type="object">PixelPerfect\DiscountExclusion\Model\StrategyEligibilityGuards\ZeroPrice</item>
 
@@ -253,7 +304,7 @@ class CustomerGroupGuard implements StrategyEligibilityGuardInterface
 - **Return `false` to allow discounts**: When a guard returns `false`, strategies are skipped and the discount is allowed
 - **Return `true` to continue**: When all guards return `true`, strategies will evaluate
 - **Keep it lightweight**: Guards run on every item/rule combination, so avoid expensive operations
-- **Use Rule object**: Access rule properties like `$rule->getSimpleAction()`, `$rule->getRuleId()`, `$rule->getStoreLabels()`, etc.
+- **Use Rule object**: Access rule properties like `$rule->getSimpleAction()`, `$rule->getRuleId()`, `$rule->getCouponType()`, etc.
 
 **Common Guard Use Cases**:
 ```php
@@ -419,11 +470,31 @@ Extension points (guards and strategies) are configured via **dependency injecti
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
 
+    <!-- Service contracts -->
+    <preference for="PixelPerfect\DiscountExclusion\Api\DiscountExclusionManagerInterface"
+                type="PixelPerfect\DiscountExclusion\Service\DiscountExclusionManager"/>
+    <preference for="PixelPerfect\DiscountExclusion\Api\MessageProcessorInterface"
+                type="PixelPerfect\DiscountExclusion\Service\MessageProcessor"/>
+    <preference for="PixelPerfect\DiscountExclusion\Api\ConfigInterface"
+                type="PixelPerfect\DiscountExclusion\Service\Config"/>
+    <preference for="PixelPerfect\DiscountExclusion\Api\ExclusionResultCollectorInterface"
+                type="PixelPerfect\DiscountExclusion\Service\ExclusionResultCollector"/>
+
+    <!-- Configure discount validator plugin -->
+    <type name="Magento\SalesRule\Model\Validator">
+        <plugin name="discount_exclusion_validator"
+                type="PixelPerfect\DiscountExclusion\Plugin\SalesRule\Model\ValidatorPlugin"
+                sortOrder="10"/>
+    </type>
+
     <!-- Configure guards and strategies -->
     <type name="PixelPerfect\DiscountExclusion\Service\DiscountExclusionManager">
         <arguments>
             <!-- Strategy Eligibility Guards (run first, gate-keeping) -->
             <argument name="strategyEligibilityGuards" xsi:type="array">
+                <item name="coupon_only" xsi:type="object">
+                    PixelPerfect\DiscountExclusion\Model\StrategyEligibilityGuards\CouponOnly
+                </item>
                 <item name="ampromo" xsi:type="object">
                     PixelPerfect\DiscountExclusion\Model\StrategyEligibilityGuards\Ampromo
                 </item>
@@ -446,16 +517,29 @@ Extension points (guards and strategies) are configured via **dependency injecti
         </arguments>
     </type>
 
+    <!-- Proxies for session dependencies -->
+    <type name="PixelPerfect\DiscountExclusion\Service\MessageProcessor">
+        <arguments>
+            <argument name="checkoutSession" xsi:type="object">Magento\Checkout\Model\Session\Proxy</argument>
+        </arguments>
+    </type>
+    <type name="PixelPerfect\DiscountExclusion\Observer\CouponPostObserver">
+        <arguments>
+            <argument name="checkoutSession" xsi:type="object">Magento\Checkout\Model\Session\Proxy</argument>
+        </arguments>
+    </type>
+
 </config>
 ```
 
 ### Ordering Considerations
 
 **Guards** - Order from most restrictive/cheapest to least:
-1. Zero-price check (very cheap)
-2. Rule type checks (cheap, using Rule object)
-3. Customer/session checks (moderate)
-4. Database lookups (more expensive)
+1. Coupon-only check (very cheap, skips automatic rules)
+2. Zero-price check (very cheap)
+3. Rule type checks (cheap, using Rule object)
+4. Customer/session checks (moderate)
+5. Database lookups (more expensive)
 
 **Strategies** - Order from most common to least common:
 1. Special price (very common)
@@ -473,37 +557,63 @@ src/
 │   ├── ConfigInterface.php                      # Configuration service interface
 │   ├── DiscountExclusionManagerInterface.php    # Main manager interface
 │   ├── DiscountExclusionStrategyInterface.php   # Strategy interface
-│   ├── StrategyEligibilityGuardInterface.php    # Guard interface
-│   └── MessageProcessorInterface.php            # Message handling
+│   ├── ExclusionResultCollectorInterface.php    # Result collector interface
+│   ├── MessageProcessorInterface.php            # Message handling interface
+│   └── StrategyEligibilityGuardInterface.php    # Guard interface
+├── Model/
+│   ├── MessageGroups.php                        # Message group constants
+│   ├── SessionKeys.php                          # Session key constants
+│   ├── Strategy/
+│   │   ├── CatalogRuleStrategy.php              # Built-in strategy
+│   │   └── SpecialPriceStrategy.php             # Built-in strategy
+│   └── StrategyEligibilityGuards/
+│       ├── Ampromo.php                          # Built-in guard
+│       ├── CouponOnly.php                       # Built-in guard
+│       └── ZeroPrice.php                        # Built-in guard
+├── Observer/
+│   ├── CartPageLoadObserver.php                 # Clears session on cart load
+│   └── CouponPostObserver.php                   # Displays messages after coupon apply
 ├── Plugin/
 │   └── SalesRule/
 │       └── Model/
 │           └── ValidatorPlugin.php              # Main interception point
-├── Model/
-│   ├── Strategy/
-│   │   ├── SpecialPriceStrategy.php            # Built-in strategy
-│   │   └── CatalogRuleStrategy.php             # Built-in strategy
-│   ├── StrategyEligibilityGuards/
-│   │   ├── Ampromo.php                         # Built-in guard
-│   │   └── ZeroPrice.php                       # Built-in guard
-│   ├── MessageGroups.php                        # Message group constants
-│   └── SessionKeys.php                          # Session key constants
 ├── Service/
 │   ├── Config.php                               # Configuration service implementation
-│   ├── DiscountExclusionManager.php            # Main business logic
+│   ├── DiscountExclusionManager.php             # Main business logic
+│   ├── ExclusionResultCollector.php             # Collects excluded items
 │   └── MessageProcessor.php                     # Message deduplication
 ├── etc/
 │   ├── acl.xml                                  # Admin ACL permissions
 │   ├── config.xml                               # Default configuration values
 │   ├── di.xml                                   # Dependency injection config
-│   └── adminhtml/
-│       └── system.xml                           # Admin configuration fields
-└── i18n/
-    ├── en_US.csv                                # English translations
-    ├── de_DE.csv                                # German translations
-    ├── it_IT.csv                                # Italian translations
-    ├── fr_FR.csv                                # French translations
-    └── es_ES.csv                                # Spanish translations
+│   ├── module.xml                               # Module declaration
+│   ├── adminhtml/
+│   │   └── system.xml                           # Admin configuration fields
+│   └── frontend/
+│       └── events.xml                           # Frontend event observers
+├── i18n/
+│   ├── de_DE.csv                                # German translations
+│   ├── en_US.csv                                # English translations
+│   ├── es_ES.csv                                # Spanish translations
+│   ├── fr_FR.csv                                # French translations
+│   └── it_IT.csv                                # Italian translations
+└── Test/
+    └── Unit/
+        ├── Model/
+        │   ├── Strategy/
+        │   │   ├── CatalogRuleStrategyTest.php
+        │   │   └── SpecialPriceStrategyTest.php
+        │   └── StrategyEligibilityGuards/
+        │       ├── AmpromoTest.php
+        │       ├── CouponOnlyTest.php
+        │       └── ZeroPriceTest.php
+        ├── Plugin/
+        │   └── SalesRule/
+        │       └── Model/
+        │           └── ValidatorPluginTest.php
+        └── Service/
+            ├── DiscountExclusionManagerTest.php
+            └── ExclusionResultCollectorTest.php
 ```
 
 ### Key Classes
@@ -519,13 +629,26 @@ src/
 - Checks module enabled state before processing
 - Provides access to both quote item and sales rule
 - Delegates decision-making to `DiscountExclusionManager`
-- Handles message display and session-based deduplication
+- Collects excluded items via `ExclusionResultCollector`
 
 **DiscountExclusionManager** (`src/Service/DiscountExclusionManager.php`):
 - Orchestrates guard and strategy evaluation
 - Short-circuits on first guard that returns `false`
 - Short-circuits on first strategy that returns `true`
 - Pure business logic, no side effects
+
+**ExclusionResultCollector** (`src/Service/ExclusionResultCollector.php`):
+- Singleton service collecting excluded items during quote processing
+- Stores items by coupon code with product name and reason
+- Deduplicates by product ID
+- Cleared after messages are displayed
+
+**CouponPostObserver** (`src/Observer/CouponPostObserver.php`):
+- Listens to coupon application post-dispatch event
+- Retrieves excluded items from collector
+- Displays consolidated warning messages
+- Removes coupon from quote if no actual discount applied
+- Clears Magento's generic messages for better UX
 
 **Message Handling**:
 - Messages are grouped by `MessageGroups::DISCOUNT_EXCLUSION`
@@ -557,6 +680,21 @@ public function aroundProcess(
 - Returns `$subject` without calling `$proceed()` → Blocks discount application
 - Returns `$proceed($item, $rule)` → Allows normal discount processing
 
+### Event Observers
+
+Observers are registered in `etc/frontend/events.xml`:
+```xml
+<event name="controller_action_predispatch_checkout_cart_index">
+    <observer name="discount_exclusion_cart_load"
+              instance="PixelPerfect\DiscountExclusion\Observer\CartPageLoadObserver"/>
+</event>
+
+<event name="controller_action_postdispatch_checkout_cart_couponPost">
+    <observer name="discount_exclusion_coupon_post"
+              instance="PixelPerfect\DiscountExclusion\Observer\CouponPostObserver"/>
+</event>
+```
+
 ## Requirements
 
 - Magento 2.4.x or higher
@@ -572,27 +710,59 @@ bin/magento setup:upgrade
 bin/magento cache:flush
 ```
 
+## Testing
+
+The module includes comprehensive unit tests for all core components.
+
+**Running Tests**:
+```bash
+# Run all module tests
+bin/cli vendor/bin/phpunit -c dev/tests/unit/phpunit.xml.dist \
+    local-repository/pixelperfectat/magento2-module-discount-exclusion/Test/Unit
+
+# Run specific test class
+bin/cli vendor/bin/phpunit -c dev/tests/unit/phpunit.xml.dist \
+    local-repository/pixelperfectat/magento2-module-discount-exclusion/Test/Unit/Service/DiscountExclusionManagerTest.php
+```
+
+**Test Coverage**:
+- Guards: `Ampromo`, `CouponOnly`, `ZeroPrice`
+- Strategies: `SpecialPriceStrategy`, `CatalogRuleStrategy`
+- Services: `DiscountExclusionManager`, `ExclusionResultCollector`
+- Plugins: `ValidatorPlugin`
+
 ## Debugging & Troubleshooting
+
+### Enable Debug Logging
+
+The module includes debug logging via `Psr\Log\LoggerInterface`. Check `var/log/debug.log` for entries prefixed with `DiscountExclusion:`.
 
 ### Enable Xdebug Breakpoints
 
 Key breakpoints for debugging:
 - `ValidatorPlugin::aroundProcess()` - Entry point for discount validation
 - `DiscountExclusionManager::shouldExcludeFromDiscount()` - Decision logic
+- `CouponPostObserver::execute()` - Message display logic
 - Your custom guard/strategy classes - Verify they're being called
 
 ### Common Issues
 
 **Discounts not being blocked**:
-1. Check if a guard is returning `false` (allowing discount)
-2. Verify strategies are returning `true` when they should exclude
-3. Confirm your classes are registered in `di.xml`
-4. Run `bin/magento cache:clean` after di.xml changes
+1. Check if module is enabled in admin (`Stores → Configuration → Sales → Discount Exclusion`)
+2. Check if a guard is returning `false` (allowing discount)
+3. Verify strategies are returning `true` when they should exclude
+4. Confirm your classes are registered in `di.xml`
+5. Run `bin/magento cache:clean` after di.xml changes
 
 **Messages not displaying**:
-1. Check session - messages are deduplicated per product
-2. Verify coupon code is available (required for message display)
-3. Clear checkout session to reset processed product IDs
+1. Check `CouponPostObserver` is triggered (add breakpoint or log)
+2. Verify `ExclusionResultCollector` has items (`hasAnyExcludedItems()`)
+3. Clear checkout session and try again
+4. Check `var/log/debug.log` for `DiscountExclusion:` entries
+
+**Automatic rules being blocked**:
+1. Ensure `CouponOnly` guard is registered and running
+2. Verify the rule has `coupon_type = 1` (no coupon needed)
 
 **Performance concerns**:
 1. Optimize guard order (cheap checks first)
@@ -604,9 +774,9 @@ Key breakpoints for debugging:
 
 - Additional default guards and strategies
 - Event dispatching for observability
-- Admin configuration options (optional)
 - Performance monitoring and metrics
 - Compatibility with third-party discount modules
+- GraphQL support for headless checkout
 
 ## Contributing
 
