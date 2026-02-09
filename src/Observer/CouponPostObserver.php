@@ -8,7 +8,10 @@ use Magento\Framework\App\RequestInterface;
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Framework\Message\ManagerInterface;
+use Magento\Framework\Pricing\PriceCurrencyInterface;
 use Magento\Quote\Api\CartRepositoryInterface;
+use Magento\SalesRule\Model\Rule;
+use PixelPerfect\DiscountExclusion\Api\Data\BypassResultType;
 use PixelPerfect\DiscountExclusion\Api\ExclusionResultCollectorInterface;
 use Psr\Log\LoggerInterface;
 
@@ -20,6 +23,7 @@ class CouponPostObserver implements ObserverInterface
         private readonly RequestInterface $request,
         private readonly CheckoutSession $checkoutSession,
         private readonly CartRepositoryInterface $quoteRepository,
+        private readonly PriceCurrencyInterface $priceCurrency,
         private readonly LoggerInterface $logger
     ) {
     }
@@ -37,48 +41,92 @@ class CouponPostObserver implements ObserverInterface
             return;
         }
 
-        // Get the coupon code that was submitted
         $couponCode = trim((string) $this->request->getParam('coupon_code', ''));
 
-        $this->logger->debug('DiscountExclusion: Checking for excluded items', [
-            'coupon_code' => $couponCode,
-            'has_any_excluded' => $this->resultCollector->hasAnyExcludedItems(),
-        ]);
-
-        // Check if we have excluded items for this coupon
-        if ($couponCode === '' || !$this->resultCollector->hasExcludedItems($couponCode)) {
-            $this->logger->debug('DiscountExclusion: No excluded items for this coupon');
+        if ($couponCode === '') {
             $this->resultCollector->clear();
             return;
         }
 
-        $excludedItems = $this->resultCollector->getExcludedItems($couponCode);
+        $hasExcluded = $this->resultCollector->hasExcludedItems($couponCode);
+        $hasBypassed = $this->resultCollector->hasBypassedItems($couponCode);
 
-        $this->logger->info('DiscountExclusion: Found excluded items, replacing messages', [
+        $this->logger->debug('DiscountExclusion: Checking for results', [
             'coupon_code' => $couponCode,
-            'excluded_count' => count($excludedItems),
+            'has_excluded' => $hasExcluded,
+            'has_bypassed' => $hasBypassed,
         ]);
 
-        // Check if any actual discount was applied
+        if (!$hasExcluded && !$hasBypassed) {
+            $this->logger->debug('DiscountExclusion: No excluded or bypassed items for this coupon');
+            $this->resultCollector->clear();
+            return;
+        }
+
         $quote = $this->checkoutSession->getQuote();
         $discountAmount = abs((float) $quote->getShippingAddress()->getDiscountAmount());
 
-        $this->logger->debug('DiscountExclusion: Checking discount amount', [
-            'discount_amount' => $discountAmount,
-        ]);
+        // Determine if coupon should be removed:
+        // Remove when ALL items are either excluded or existing_better (no actual discount applied)
+        $shouldRemoveCoupon = $this->shouldRemoveCoupon($couponCode, $discountAmount);
 
-        // If no actual discount was applied (only €0 items received the coupon),
-        // remove the coupon from the quote so UI shows "Apply coupon" instead of "Cancel coupon"
-        if ($discountAmount < 0.01) {
+        if ($shouldRemoveCoupon) {
             $this->logger->info('DiscountExclusion: No actual discount applied, removing coupon from quote');
             $quote->setCouponCode('')->collectTotals();
             $this->quoteRepository->save($quote);
         }
 
-        // Clear ALL existing messages (including Magento's generic "coupon not valid" error)
+        // Clear ALL existing messages (including Magento's generic messages)
         $this->messageManager->getMessages(true);
 
-        // Build and add our custom message(s)
+        // Process exclusion messages
+        if ($hasExcluded) {
+            $this->addExclusionMessages($couponCode);
+        }
+
+        // Process bypass messages
+        if ($hasBypassed) {
+            $this->addBypassMessages($couponCode);
+        }
+
+        $this->resultCollector->clear();
+    }
+
+    /**
+     * Determine if coupon should be removed from quote
+     *
+     * @param string $couponCode
+     * @param float  $discountAmount
+     *
+     * @return bool
+     */
+    private function shouldRemoveCoupon(string $couponCode, float $discountAmount): bool
+    {
+        // If there's a meaningful discount amount, keep the coupon
+        if ($discountAmount >= 0.01) {
+            return false;
+        }
+
+        // No discount applied — check if all bypassed items are existing_better
+        $bypassedItems = $this->resultCollector->getBypassedItems($couponCode);
+        foreach ($bypassedItems as $item) {
+            if ($item['type'] === BypassResultType::ADJUSTED) {
+                // An adjusted item means some discount was applied
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Add exclusion warning messages
+     *
+     * @param string $couponCode
+     */
+    private function addExclusionMessages(string $couponCode): void
+    {
+        $excludedItems = $this->resultCollector->getExcludedItems($couponCode);
         $productNames = array_map(
             fn(array $item) => $item['name'],
             $excludedItems
@@ -98,13 +146,110 @@ class CouponPostObserver implements ObserverInterface
             );
         }
 
-        $this->logger->debug('DiscountExclusion: Adding warning message', [
-            'message' => (string) $message,
-        ]);
-
         $this->messageManager->addWarningMessage((string) $message);
+    }
 
-        // Clear collector for next request
-        $this->resultCollector->clear();
+    /**
+     * Add bypass-related messages (adjusted and existing_better)
+     *
+     * @param string $couponCode
+     */
+    private function addBypassMessages(string $couponCode): void
+    {
+        $bypassedItems = $this->resultCollector->getBypassedItems($couponCode);
+
+        foreach ($bypassedItems as $itemData) {
+            $productName = $itemData['name'];
+            $type = $itemData['type'];
+            $params = $itemData['messageParams'];
+            $simpleAction = $params['simpleAction'] ?? '';
+
+            $message = $this->buildBypassMessage($couponCode, $productName, $type, $simpleAction, $params);
+
+            if ($message === null) {
+                continue;
+            }
+
+            if ($type === BypassResultType::ADJUSTED) {
+                $this->messageManager->addNoticeMessage((string) $message);
+            } else {
+                $this->messageManager->addWarningMessage((string) $message);
+            }
+        }
+    }
+
+    /**
+     * Build the appropriate bypass message based on type and action
+     *
+     * @param string                    $couponCode
+     * @param string                    $productName
+     * @param BypassResultType          $type
+     * @param string                    $simpleAction
+     * @param array<string, float|string> $params
+     *
+     * @return \Magento\Framework\Phrase|null
+     */
+    private function buildBypassMessage(
+        string $couponCode,
+        string $productName,
+        BypassResultType $type,
+        string $simpleAction,
+        array $params,
+    ): ?\Magento\Framework\Phrase {
+        if ($type === BypassResultType::ADJUSTED && $simpleAction === Rule::BY_PERCENT_ACTION) {
+            return __(
+                'Coupon "%1" applied an additional %2%% discount to "%3", adjusted from %4%% because it is already %5%% discounted.',
+                $couponCode,
+                number_format((float) ($params['additionalDiscountPercent'] ?? 0), 0),
+                $productName,
+                number_format((float) ($params['ruleDiscountPercent'] ?? 0), 0),
+                number_format((float) ($params['existingDiscountPercent'] ?? 0), 0),
+            );
+        }
+
+        if ($type === BypassResultType::ADJUSTED && $simpleAction === Rule::BY_FIXED_ACTION) {
+            return __(
+                'Coupon "%1" applied an additional %2 discount to "%3", adjusted from %4 because it is already discounted by %5.',
+                $couponCode,
+                $this->formatPrice((float) ($params['additionalDiscountAmount'] ?? 0)),
+                $productName,
+                $this->formatPrice((float) ($params['ruleDiscountAmount'] ?? 0)),
+                $this->formatPrice((float) ($params['existingDiscountAmount'] ?? 0)),
+            );
+        }
+
+        if ($type === BypassResultType::EXISTING_BETTER && $simpleAction === Rule::BY_PERCENT_ACTION) {
+            return __(
+                'Coupon "%1" was not applied to "%2" because the existing %3%% discount already exceeds the coupon\'s %4%% discount.',
+                $couponCode,
+                $productName,
+                number_format((float) ($params['existingDiscountPercent'] ?? 0), 0),
+                number_format((float) ($params['ruleDiscountPercent'] ?? 0), 0),
+            );
+        }
+
+        if ($type === BypassResultType::EXISTING_BETTER && $simpleAction === Rule::BY_FIXED_ACTION) {
+            return __(
+                'Coupon "%1" was not applied to "%2" because the existing %3 discount already exceeds the coupon\'s %4 discount.',
+                $couponCode,
+                $productName,
+                $this->formatPrice((float) ($params['existingDiscountAmount'] ?? 0)),
+                $this->formatPrice((float) ($params['ruleDiscountAmount'] ?? 0)),
+            );
+        }
+
+        return null;
+    }
+
+    /**
+     * Format a price using the store's currency
+     *
+     * @param float $amount
+     *
+     * @return string
+     */
+    private function formatPrice(float $amount): string
+    {
+        return $this->priceCurrency->format($amount, false);
     }
 }
