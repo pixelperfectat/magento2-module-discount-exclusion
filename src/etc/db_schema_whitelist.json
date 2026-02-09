@@ -1,0 +1,7 @@
+{
+    "salesrule": {
+        "column": {
+            "bypass_discount_exclusion": true
+        }
+    }
+}

@@ -21,6 +21,7 @@
     <type name="PixelPerfect\DiscountExclusion\Service\DiscountExclusionManager">
         <arguments>
             <argument name="strategyEligibilityGuards" xsi:type="array">
+                <item name="bypass_exclusion" xsi:type="object">PixelPerfect\DiscountExclusion\Model\StrategyEligibilityGuards\BypassExclusion</item>
                 <item name="coupon_only" xsi:type="object">PixelPerfect\DiscountExclusion\Model\StrategyEligibilityGuards\CouponOnly</item>
                 <item name="ampromo" xsi:type="object">PixelPerfect\DiscountExclusion\Model\StrategyEligibilityGuards\Ampromo</item>
                 <item name="zero_price" xsi:type="object">PixelPerfect\DiscountExclusion\Model\StrategyEligibilityGuards\ZeroPrice</item>

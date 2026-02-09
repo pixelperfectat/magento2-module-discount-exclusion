@@ -5,3 +5,5 @@
 "Enable Module","Enable Module"
 "Enable or disable the discount exclusion functionality","Enable or disable the discount exclusion functionality"
 "Discount Exclusion Configuration","Discount Exclusion Configuration"
+"Bypass Discount Exclusion","Bypass Discount Exclusion"
+"When enabled, this rule's discount will apply even to products already discounted by special prices or catalog rules.","When enabled, this rule's discount will apply even to products already discounted by special prices or catalog rules."

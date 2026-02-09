@@ -5,3 +5,5 @@
 "Enable Module","Activer le Module"
 "Enable or disable the discount exclusion functionality","Activer ou désactiver la fonctionnalité d'exclusion de remise"
 "Discount Exclusion Configuration","Configuration de l'Exclusion de Remise"
+"Bypass Discount Exclusion","Contourner l'Exclusion de Remise"
+"When enabled, this rule's discount will apply even to products already discounted by special prices or catalog rules.","Lorsque cette option est activée, la remise de cette règle s'appliquera même aux produits déjà remisés par des prix spéciaux ou des règles de catalogue."

@@ -5,3 +5,5 @@
 "Enable Module","Abilita Modulo"
 "Enable or disable the discount exclusion functionality","Abilita o disabilita la funzionalità di esclusione sconto"
 "Discount Exclusion Configuration","Configurazione Esclusione Sconto"
+"Bypass Discount Exclusion","Ignora Esclusione Sconto"
+"When enabled, this rule's discount will apply even to products already discounted by special prices or catalog rules.","Quando abilitato, lo sconto di questa regola verrà applicato anche ai prodotti già scontati da prezzi speciali o regole di catalogo."
