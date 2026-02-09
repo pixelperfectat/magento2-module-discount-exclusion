@@ -11,7 +11,9 @@ Status: Active development. APIs and behavior may change without backward compat
 - Provides a pluggable, DI-driven architecture to decide:
   - If exclusion strategies should run (Strategy Eligibility Guards).
   - Which exclusion strategies apply to a product.
-- Displays user-friendly messages explaining why coupons weren't applied to specific products.
+- **Per-rule bypass toggle** with max-discount logic: when enabled on a rule, the customer receives `max(existing discount, rule discount)` calculated from the regular price, instead of stacking discounts.
+- Displays user-friendly messages explaining why coupons weren't applied or were adjusted for specific products.
+- Queues messages in the session and displays them only on the cart page for a cleaner UX.
 - Automatically removes coupon from cart when no actual discount was applied.
 
 ## Architecture Overview
@@ -23,15 +25,35 @@ This module uses an **Around Plugin** on `Magento\SalesRule\Model\Validator::pro
 1. **Module State Check**: Plugin checks if module is enabled for the current store view via admin configuration.
 2. **Plugin Interception**: When Magento processes a sales rule for a quote item, `ValidatorPlugin::aroundProcess()` intercepts the call.
 3. **Product Extraction**: The plugin identifies the actual product (handling configurable products by examining children).
-4. **Guard Evaluation**: Strategy Eligibility Guards run first to determine if exclusion logic should even be considered.
-5. **Strategy Evaluation**: If guards allow, Discount Exclusion Strategies check if the product already has a discount.
-6. **Decision**: If excluded, the plugin returns without calling `$proceed()`, blocking the discount. Otherwise, it calls `$proceed()` to allow normal discount processing.
-7. **Result Collection**: Excluded items are collected by `ExclusionResultCollector` during processing.
-8. **User Feedback**: After coupon application, `CouponPostObserver` displays consolidated messages for all excluded products.
+4. **Bypass Check**: If the rule has `bypass_discount_exclusion` enabled, the bypass flow runs instead of the standard exclusion flow.
+5. **Guard Evaluation**: Strategy Eligibility Guards run first to determine if exclusion logic should be considered.
+6. **Strategy Evaluation**: If guards allow, Discount Exclusion Strategies check if the product already has a discount.
+7. **Decision**:
+   - **Standard flow**: If excluded, the plugin returns without calling `$proceed()`, blocking the discount. Otherwise, it calls `$proceed()`.
+   - **Bypass flow**: `MaxDiscountCalculator` computes the result. The discount may be adjusted (capped to the difference), blocked (existing is better), or allowed fully (stacking fallback for unsupported rule types).
+8. **Result Collection**: Excluded and bypassed items are collected by `ExclusionResultCollector` during processing.
+9. **User Feedback**: Messages are queued in the session and displayed on the cart page via `CartPageLoadObserver`. On coupon apply, `CouponPostObserver` displays messages immediately.
+
+### Bypass Flow (Max-Discount Logic)
+
+When a cart rule has the **Bypass Discount Exclusion** toggle enabled, the plugin applies maximum discount logic instead of blocking the discount entirely:
+
+```
+ValidatorPlugin::aroundProcess()
+├── Rule has bypass_discount_exclusion?
+│   ├── Product NOT already discounted → proceed() (normal discount)
+│   └── Product IS already discounted → MaxDiscountCalculator
+│       ├── STACKING_FALLBACK (cart_fixed/buy_x_get_y) → proceed()
+│       ├── EXISTING_BETTER (existing >= rule) → block + message
+│       └── ADJUSTED (rule > existing) → proceed() then cap discount + message
+└── No bypass → standard exclusion flow
+```
+
+**Example:** Product regular price 100, special price 75 (25% off). Coupon is 30% off.
+- **Without bypass**: Coupon blocked entirely (product already discounted).
+- **With bypass**: `max(25%, 30%) = 30%` → target price 70 → additional discount of 5 applied → customer pays 70.
 
 ## Core Components
-
-The module is built around several key extensible components:
 
 ### 1. Strategy Eligibility Guards
 
@@ -132,16 +154,7 @@ interface DiscountExclusionStrategyInterface
 **Built-in Strategies**:
 
 1. **SpecialPriceStrategy**: Excludes products where the special price is active and equals the final price
-   ```php
-   // Checks if product has special price active and applied
-   // Returns true if special price is the discount mechanism
-   ```
-
 2. **CatalogRuleStrategy**: Excludes products affected by catalog price rules
-   ```php
-   // Checks if catalog price rule discount is applied to product
-   // Returns true if catalog rule is providing the discount
-   ```
 
 **Key Points**:
 - Strategies return `true` to **exclude** the product from cart discounts
@@ -150,9 +163,41 @@ interface DiscountExclusionStrategyInterface
 - Strategies only run if all guards returned `true`
 - Strategies focus on "is this product already discounted?" logic
 
-### 3. Exclusion Result Collector
+### 3. Max Discount Calculator
 
-**Purpose**: A singleton service that collects excluded items during quote processing, enabling consolidated message display after all items are processed.
+**Purpose**: Computes the capped discount when a bypassed rule applies to an already-discounted product. The customer receives `max(existing discount, rule discount)` from the regular price.
+
+**Interface**:
+```php
+namespace PixelPerfect\DiscountExclusion\Api;
+
+interface MaxDiscountCalculatorInterface
+{
+    /**
+     * Calculate the max-discount result for a bypassed rule
+     *
+     * @param ProductInterface|Product $product The product (with prices loaded)
+     * @param Rule                     $rule    The cart price rule being evaluated
+     * @param float                    $qty     Item quantity in the cart
+     * @return BypassResult
+     */
+    public function calculate(ProductInterface|Product $product, Rule $rule, float $qty): BypassResult;
+}
+```
+
+**Supported rule types**:
+- `by_percent` — percentage-based discount
+- `by_fixed` — fixed amount discount
+- `cart_fixed` / `buy_x_get_y` — returns `STACKING_FALLBACK` (full stacking, max-discount not applicable)
+
+**Result types** (`BypassResultType` enum):
+- `ADJUSTED` — Rule discount exceeds existing; apply only the difference
+- `EXISTING_BETTER` — Existing discount is equal or greater; block the rule discount
+- `STACKING_FALLBACK` — Rule type not supported for max-discount; allow full stacking
+
+### 4. Exclusion Result Collector
+
+**Purpose**: A singleton service that collects excluded and bypassed items during quote processing, enabling consolidated message display after all items are processed.
 
 **Interface**:
 ```php
@@ -160,80 +205,69 @@ namespace PixelPerfect\DiscountExclusion\Api;
 
 interface ExclusionResultCollectorInterface
 {
+    // Exclusion tracking
     public function addExcludedItem(AbstractItem $item, string $reason, string $couponCode): void;
     public function hasExcludedItems(string $couponCode): bool;
     public function hasAnyExcludedItems(): bool;
     public function getExcludedItems(string $couponCode): array;
     public function getCouponCodes(): array;
+
+    // Bypass tracking
+    public function addBypassedItem(AbstractItem $item, BypassResultType $type, string $couponCode, array $messageParams = []): void;
+    public function hasBypassedItems(string $couponCode): bool;
+    public function hasAnyBypassedItems(): bool;
+    public function getBypassedItems(string $couponCode): array;
+
     public function clear(): void;
 }
 ```
 
 **Key Points**:
-- Collects excluded items per coupon code
+- Collects excluded and bypassed items per coupon code
 - Deduplicates by product ID (same product won't be added twice)
+- Bypass items carry message parameters for rendering (discount percentages, amounts)
 - Cleared after messages are displayed
 
-### 4. Observers
+### 5. Exclusion Message Builder
+
+**Purpose**: Builds consolidated exclusion and bypass messages for a given coupon code. Supports both immediate display (via message manager) and deferred display (via session queuing).
+
+**Interface**:
+```php
+namespace PixelPerfect\DiscountExclusion\Api;
+
+interface ExclusionMessageBuilderInterface
+{
+    // Add messages directly to the message manager
+    public function addMessagesForCoupon(string $couponCode): void;
+
+    // Build messages for session queuing (returns array of {type, text})
+    public function buildMessagesForCoupon(string $couponCode): array;
+}
+```
+
+**Message types**:
+- **Exclusion warnings**: "Coupon X was not applied to Y because it is already discounted"
+- **Bypass adjusted notices**: "Coupon X applied an additional 5% discount to Y, adjusted from 30% because it is already 25% discounted"
+- **Bypass existing_better warnings**: "Coupon X was not applied to Y because the existing 25% discount already exceeds the coupon's 20% discount"
+
+### 6. Observers
 
 **CouponPostObserver**: Handles message display and coupon cleanup after coupon application
 - Listens to `controller_action_postdispatch_checkout_cart_couponPost`
-- Displays consolidated warning messages for all excluded products
-- Removes coupon from quote if no actual discount was applied (so UI shows "Apply coupon" instead of "Cancel coupon")
+- Displays consolidated messages for all excluded and bypassed products
+- Removes coupon from quote if no actual discount was applied
 - Clears Magento's generic error messages and replaces with specific exclusion messages
 
-**CartPageLoadObserver**: Clears session state on cart page load
+**CartUpdateObserver**: Queues messages for display on the cart page
+- Listens to cart add, update, and delete post-dispatch events
+- Builds messages via `ExclusionMessageBuilder` and stores them in the checkout session
+- Messages are only displayed when the cart page loads (not on PLP/PDP)
+
+**CartPageLoadObserver**: Displays queued messages and clears session state on cart page load
 - Listens to `controller_action_predispatch_checkout_cart_index`
-- Clears processed product IDs from session to allow fresh message display
-
-## How it works (detailed)
-
-### Step-by-Step Process
-
-1. **Module State Check**:
-   - Plugin checks if module is enabled via `Config::isEnabled($item->getStoreId())`
-   - If disabled, immediately returns `$proceed()` to allow normal discount processing
-   - This provides a global kill switch without uninstalling the module
-
-2. **Interception Point**:
-   - Plugin intercepts at `Magento\SalesRule\Model\Validator::process(AbstractItem $item, Rule $rule)`
-   - This gives access to both the quote item and the sales rule being applied
-
-3. **Child Item Filtering**:
-   - Skip child items of configurable products (return `$proceed()` immediately)
-   - Only process parent items or simple products
-
-4. **Product Identification**:
-   ```php
-   $product = $item->getProduct();
-   $children = $item->getChildren();
-   if (count($children) > 0 && $children[0]->getProduct()) {
-       $product = $children[0]->getProduct(); // Use child for configurable pricing
-   }
-   ```
-
-5. **Guard Evaluation** (via `DiscountExclusionManager`):
-   - Each guard's `canProcess()` method is called sequentially
-   - If **any** guard returns `false`, strategy evaluation is skipped entirely
-   - The item remains eligible for the discount (return `$proceed()`)
-
-6. **Strategy Evaluation** (if guards allow):
-   - Each strategy's `shouldExcludeFromDiscount()` method is called sequentially
-   - **First** strategy that returns `true` triggers exclusion
-   - Remaining strategies are not evaluated (short-circuit)
-
-7. **Exclusion Handling**:
-   - If excluded: add to `ExclusionResultCollector` for later message display
-   - Return `$subject` without calling `$proceed()` (blocks discount application)
-
-8. **Allow Handling**:
-   - If not excluded, call `$proceed($item, $rule)` to allow normal discount processing
-
-9. **Post-Processing** (via `CouponPostObserver`):
-   - After all items processed, observer checks for excluded items
-   - Displays consolidated warning message listing all excluded products
-   - If no actual discount was applied, removes coupon from quote
-   - Clears collector for next request
+- Reads queued messages from session and displays them
+- Clears processed product IDs from session
 
 ## Extending the Module
 
@@ -254,9 +288,6 @@ use Magento\Quote\Model\Quote\Item\AbstractItem;
 use Magento\SalesRule\Model\Rule;
 use PixelPerfect\DiscountExclusion\Api\StrategyEligibilityGuardInterface;
 
-/**
- * Example: Skip exclusion for specific customer groups
- */
 class CustomerGroupGuard implements StrategyEligibilityGuardInterface
 {
     public function __construct(
@@ -299,33 +330,6 @@ class CustomerGroupGuard implements StrategyEligibilityGuardInterface
 </type>
 ```
 
-**Guard Best Practices**:
-- **Order matters**: Place cheap, frequently-triggered guards first for better performance
-- **Return `false` to allow discounts**: When a guard returns `false`, strategies are skipped and the discount is allowed
-- **Return `true` to continue**: When all guards return `true`, strategies will evaluate
-- **Keep it lightweight**: Guards run on every item/rule combination, so avoid expensive operations
-- **Use Rule object**: Access rule properties like `$rule->getSimpleAction()`, `$rule->getRuleId()`, `$rule->getCouponType()`, etc.
-
-**Common Guard Use Cases**:
-```php
-// Skip specific rule types
-if ($rule->getSimpleAction() === 'by_percent' && $rule->getDiscountAmount() == 100) {
-    return false; // 100% off rules (free items) - don't block
-}
-
-// Date/time conditions
-$now = new \DateTime();
-$blackFriday = new \DateTime('2024-11-29');
-if ($now >= $blackFriday) {
-    return false; // Allow stacking during Black Friday
-}
-
-// Product attribute checks
-if ($product->getAttributeSetId() === 10) {
-    return false; // Digital products can stack discounts
-}
-```
-
 ### Adding a Discount Exclusion Strategy
 
 **Step 1**: Create your strategy class implementing `DiscountExclusionStrategyInterface`
@@ -340,20 +344,15 @@ use Magento\Catalog\Model\Product;
 use Magento\Quote\Model\Quote\Item\AbstractItem;
 use PixelPerfect\DiscountExclusion\Api\DiscountExclusionStrategyInterface;
 
-/**
- * Example: Exclude products with tier pricing
- */
 class TierPriceStrategy implements DiscountExclusionStrategyInterface
 {
     public function shouldExcludeFromDiscount(
         ProductInterface|Product $product,
         AbstractItem $item
     ): bool {
-        // Check if product has tier pricing configured
         $tierPrices = $product->getTierPrice();
 
         if (!empty($tierPrices)) {
-            // Check if tier pricing is actually applying
             $regularPrice = $product->getPrice();
             $finalPrice = $product->getFinalPrice();
 
@@ -362,7 +361,7 @@ class TierPriceStrategy implements DiscountExclusionStrategyInterface
             }
         }
 
-        return false; // Don't exclude based on tier pricing
+        return false;
     }
 }
 ```
@@ -384,168 +383,30 @@ class TierPriceStrategy implements DiscountExclusionStrategyInterface
 </type>
 ```
 
-**Strategy Best Practices**:
-- **Return `true` to exclude**: Product will be blocked from receiving the cart discount
-- **Return `false` to continue**: Let other strategies decide; don't influence the decision
-- **First match wins**: Strategies are evaluated in order; once one returns `true`, evaluation stops
-- **Order strategically**: Place most common exclusion reasons first for performance
-- **Focus on "already discounted"**: Strategies should answer "is this product already discounted by X mechanism?"
-
-**Common Strategy Examples**:
-```php
-// Check for manufacturer promotions via custom attribute
-public function shouldExcludeFromDiscount(
-    ProductInterface|Product $product,
-    AbstractItem $item
-): bool {
-    $hasManufacturerPromo = $product->getData('manufacturer_promo_active');
-    return (bool)$hasManufacturerPromo;
-}
-
-// Exclude products with custom price adjustments
-public function shouldExcludeFromDiscount(
-    ProductInterface|Product $product,
-    AbstractItem $item
-): bool {
-    $customPrice = $item->getCustomPrice();
-    return $customPrice !== null; // Has custom price set
-}
-
-// Exclude clearance items
-public function shouldExcludeFromDiscount(
-    ProductInterface|Product $product,
-    AbstractItem $item
-): bool {
-    $isClearance = $product->getAttributeText('is_clearance');
-    return $isClearance === 'Yes';
-}
-```
-
 ## Configuration
-
-The module provides both admin panel configuration and dependency injection configuration.
 
 ### Admin Configuration
 
-Navigate to `Stores → Configuration → Sales → Discount Exclusion` to access module settings.
-
-**Available Settings:**
+Navigate to `Stores > Configuration > Sales > Discount Exclusion` to access module settings.
 
 | Setting | Scope | Default | Description |
 |---------|-------|---------|-------------|
 | Enable Module | Store View | Yes | Enables or disables the discount exclusion functionality |
 
-**Configuration Details:**
-- **Scope**: Store-view level (can be configured per store)
-- **Config Path**: `discount_exclusion/general/enabled`
-- **ACL Permission**: `PixelPerfect_DiscountExclusion::config`
-- **Behavior**: When disabled, the plugin immediately allows all discounts to proceed without evaluation
-- **Cache**: Uses Magento's system configuration cache
+**Config Path**: `discount_exclusion/general/enabled`
+**ACL Permission**: `PixelPerfect_DiscountExclusion::config`
 
-**Programmatic Access:**
-```php
-use PixelPerfect\DiscountExclusion\Api\ConfigInterface;
+### Per-Rule Bypass Toggle
 
-public function __construct(
-    private readonly ConfigInterface $config
-) {
-}
+Each cart price rule has a **Bypass Discount Exclusion** toggle on the Rule Information tab.
 
-public function someMethod(int $storeId): void
-{
-    if ($this->config->isEnabled($storeId)) {
-        // Module is enabled for this store
-    }
-}
-```
+When enabled, the rule uses maximum discount logic instead of being blocked:
+- The customer receives `max(existing discount, rule discount)` calculated from the regular price
+- Only the difference is applied as an additional cart-rule discount
+- Supported for `by_percent` and `by_fixed` rule types
+- `cart_fixed` and `buy_x_get_y` rules fall back to full stacking
 
-### Dependency Injection Configuration
-
-Extension points (guards and strategies) are configured via **dependency injection** (`etc/di.xml`).
-
-### Complete di.xml Example
-
-```xml
-<?xml version="1.0"?>
-<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-        xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
-
-    <!-- Service contracts -->
-    <preference for="PixelPerfect\DiscountExclusion\Api\DiscountExclusionManagerInterface"
-                type="PixelPerfect\DiscountExclusion\Service\DiscountExclusionManager"/>
-    <preference for="PixelPerfect\DiscountExclusion\Api\MessageProcessorInterface"
-                type="PixelPerfect\DiscountExclusion\Service\MessageProcessor"/>
-    <preference for="PixelPerfect\DiscountExclusion\Api\ConfigInterface"
-                type="PixelPerfect\DiscountExclusion\Service\Config"/>
-    <preference for="PixelPerfect\DiscountExclusion\Api\ExclusionResultCollectorInterface"
-                type="PixelPerfect\DiscountExclusion\Service\ExclusionResultCollector"/>
-
-    <!-- Configure discount validator plugin -->
-    <type name="Magento\SalesRule\Model\Validator">
-        <plugin name="discount_exclusion_validator"
-                type="PixelPerfect\DiscountExclusion\Plugin\SalesRule\Model\ValidatorPlugin"
-                sortOrder="10"/>
-    </type>
-
-    <!-- Configure guards and strategies -->
-    <type name="PixelPerfect\DiscountExclusion\Service\DiscountExclusionManager">
-        <arguments>
-            <!-- Strategy Eligibility Guards (run first, gate-keeping) -->
-            <argument name="strategyEligibilityGuards" xsi:type="array">
-                <item name="coupon_only" xsi:type="object">
-                    PixelPerfect\DiscountExclusion\Model\StrategyEligibilityGuards\CouponOnly
-                </item>
-                <item name="ampromo" xsi:type="object">
-                    PixelPerfect\DiscountExclusion\Model\StrategyEligibilityGuards\Ampromo
-                </item>
-                <item name="zero_price" xsi:type="object">
-                    PixelPerfect\DiscountExclusion\Model\StrategyEligibilityGuards\ZeroPrice
-                </item>
-                <!-- Add your custom guards here -->
-            </argument>
-
-            <!-- Discount Exclusion Strategies (run if guards allow) -->
-            <argument name="strategies" xsi:type="array">
-                <item name="special_price" xsi:type="object">
-                    PixelPerfect\DiscountExclusion\Model\Strategy\SpecialPriceStrategy
-                </item>
-                <item name="catalog_rule" xsi:type="object">
-                    PixelPerfect\DiscountExclusion\Model\Strategy\CatalogRuleStrategy
-                </item>
-                <!-- Add your custom strategies here -->
-            </argument>
-        </arguments>
-    </type>
-
-    <!-- Proxies for session dependencies -->
-    <type name="PixelPerfect\DiscountExclusion\Service\MessageProcessor">
-        <arguments>
-            <argument name="checkoutSession" xsi:type="object">Magento\Checkout\Model\Session\Proxy</argument>
-        </arguments>
-    </type>
-    <type name="PixelPerfect\DiscountExclusion\Observer\CouponPostObserver">
-        <arguments>
-            <argument name="checkoutSession" xsi:type="object">Magento\Checkout\Model\Session\Proxy</argument>
-        </arguments>
-    </type>
-
-</config>
-```
-
-### Ordering Considerations
-
-**Guards** - Order from most restrictive/cheapest to least:
-1. Coupon-only check (very cheap, skips automatic rules)
-2. Zero-price check (very cheap)
-3. Rule type checks (cheap, using Rule object)
-4. Customer/session checks (moderate)
-5. Database lookups (more expensive)
-
-**Strategies** - Order from most common to least common:
-1. Special price (very common)
-2. Catalog rules (common)
-3. Tier pricing (less common)
-4. Custom mechanisms (rare)
+The toggle is stored as the `bypass_discount_exclusion` column on the `salesrule` table.
 
 ## Technical Details
 
@@ -554,144 +415,116 @@ Extension points (guards and strategies) are configured via **dependency injecti
 ```
 src/
 ├── Api/
-│   ├── ConfigInterface.php                      # Configuration service interface
-│   ├── DiscountExclusionManagerInterface.php    # Main manager interface
-│   ├── DiscountExclusionStrategyInterface.php   # Strategy interface
-│   ├── ExclusionResultCollectorInterface.php    # Result collector interface
-│   ├── MessageProcessorInterface.php            # Message handling interface
-│   └── StrategyEligibilityGuardInterface.php    # Guard interface
+│   ├── ConfigInterface.php
+│   ├── Data/
+│   │   ├── BypassResult.php                       # Readonly value object for max-discount results
+│   │   └── BypassResultType.php                   # Enum: ADJUSTED, EXISTING_BETTER, STACKING_FALLBACK
+│   ├── DiscountExclusionManagerInterface.php
+│   ├── DiscountExclusionStrategyInterface.php
+│   ├── ExclusionMessageBuilderInterface.php       # Message building service interface
+│   ├── ExclusionResultCollectorInterface.php
+│   ├── MaxDiscountCalculatorInterface.php         # Max-discount calculator interface
+│   ├── MessageProcessorInterface.php
+│   └── StrategyEligibilityGuardInterface.php
 ├── Model/
-│   ├── MessageGroups.php                        # Message group constants
-│   ├── SessionKeys.php                          # Session key constants
+│   ├── MessageGroups.php
+│   ├── SessionKeys.php
 │   ├── Strategy/
-│   │   ├── CatalogRuleStrategy.php              # Built-in strategy
-│   │   └── SpecialPriceStrategy.php             # Built-in strategy
+│   │   ├── CatalogRuleStrategy.php
+│   │   └── SpecialPriceStrategy.php
 │   └── StrategyEligibilityGuards/
-│       ├── Ampromo.php                          # Built-in guard
-│       ├── CouponOnly.php                       # Built-in guard
-│       └── ZeroPrice.php                        # Built-in guard
+│       ├── Ampromo.php
+│       ├── CouponOnly.php
+│       └── ZeroPrice.php
 ├── Observer/
-│   ├── CartPageLoadObserver.php                 # Clears session on cart load
-│   └── CouponPostObserver.php                   # Displays messages after coupon apply
+│   ├── CartPageLoadObserver.php                   # Displays queued messages on cart page
+│   ├── CartUpdateObserver.php                     # Queues messages on cart changes
+│   └── CouponPostObserver.php                     # Handles coupon apply messages + removal
 ├── Plugin/
 │   └── SalesRule/
 │       └── Model/
-│           └── ValidatorPlugin.php              # Main interception point
+│           └── ValidatorPlugin.php                # Main interception point + bypass logic
 ├── Service/
-│   ├── Config.php                               # Configuration service implementation
-│   ├── DiscountExclusionManager.php             # Main business logic
-│   ├── ExclusionResultCollector.php             # Collects excluded items
-│   └── MessageProcessor.php                     # Message deduplication
+│   ├── Config.php
+│   ├── DiscountExclusionManager.php
+│   ├── ExclusionMessageBuilder.php                # Builds exclusion + bypass messages
+│   ├── ExclusionResultCollector.php               # Collects excluded + bypassed items
+│   ├── MaxDiscountCalculator.php                  # Computes capped bypass discounts
+│   └── MessageProcessor.php
 ├── etc/
-│   ├── acl.xml                                  # Admin ACL permissions
-│   ├── config.xml                               # Default configuration values
-│   ├── di.xml                                   # Dependency injection config
-│   ├── module.xml                               # Module declaration
+│   ├── acl.xml
 │   ├── adminhtml/
-│   │   └── system.xml                           # Admin configuration fields
-│   └── frontend/
-│       └── events.xml                           # Frontend event observers
+│   │   └── system.xml
+│   ├── config.xml
+│   ├── db_schema.xml                              # bypass_discount_exclusion column
+│   ├── db_schema_whitelist.json
+│   ├── di.xml
+│   ├── frontend/
+│   │   └── events.xml
+│   └── module.xml
 ├── i18n/
-│   ├── de_DE.csv                                # German translations
-│   ├── en_US.csv                                # English translations
-│   ├── es_ES.csv                                # Spanish translations
-│   ├── fr_FR.csv                                # French translations
-│   └── it_IT.csv                                # Italian translations
-└── Test/
-    └── Unit/
-        ├── Model/
-        │   ├── Strategy/
-        │   │   ├── CatalogRuleStrategyTest.php
-        │   │   └── SpecialPriceStrategyTest.php
-        │   └── StrategyEligibilityGuards/
-        │       ├── AmpromoTest.php
-        │       ├── CouponOnlyTest.php
-        │       └── ZeroPriceTest.php
-        ├── Plugin/
-        │   └── SalesRule/
-        │       └── Model/
-        │           └── ValidatorPluginTest.php
-        └── Service/
-            ├── DiscountExclusionManagerTest.php
-            └── ExclusionResultCollectorTest.php
+│   ├── de_DE.csv
+│   ├── en_US.csv
+│   ├── es_ES.csv
+│   ├── fr_FR.csv
+│   └── it_IT.csv
+├── registration.php
+└── view/
+    └── adminhtml/
+        └── ui_component/
+            └── sales_rule_form.xml                # Bypass toggle on rule form
+
+Test/
+└── Unit/
+    ├── Model/
+    │   ├── Strategy/
+    │   │   ├── CatalogRuleStrategyTest.php
+    │   │   └── SpecialPriceStrategyTest.php
+    │   └── StrategyEligibilityGuards/
+    │       ├── AmpromoTest.php
+    │       ├── CouponOnlyTest.php
+    │       └── ZeroPriceTest.php
+    ├── Observer/
+    │   ├── CartPageLoadObserverTest.php
+    │   └── CartUpdateObserverTest.php
+    ├── Plugin/
+    │   └── SalesRule/
+    │       └── Model/
+    │           └── ValidatorPluginTest.php
+    └── Service/
+        ├── DiscountExclusionManagerTest.php
+        ├── ExclusionMessageBuilderTest.php
+        ├── ExclusionResultCollectorTest.php
+        └── MaxDiscountCalculatorTest.php
 ```
-
-### Key Classes
-
-**Config** (`src/Service/Config.php`):
-- Implements `ConfigInterface`
-- Reads configuration from `ScopeConfigInterface`
-- Checks if module is enabled at store-view level
-- Uses config path: `discount_exclusion/general/enabled`
-
-**ValidatorPlugin** (`src/Plugin/SalesRule/Model/ValidatorPlugin.php`):
-- Intercepts `Magento\SalesRule\Model\Validator::process()`
-- Checks module enabled state before processing
-- Provides access to both quote item and sales rule
-- Delegates decision-making to `DiscountExclusionManager`
-- Collects excluded items via `ExclusionResultCollector`
-
-**DiscountExclusionManager** (`src/Service/DiscountExclusionManager.php`):
-- Orchestrates guard and strategy evaluation
-- Short-circuits on first guard that returns `false`
-- Short-circuits on first strategy that returns `true`
-- Pure business logic, no side effects
-
-**ExclusionResultCollector** (`src/Service/ExclusionResultCollector.php`):
-- Singleton service collecting excluded items during quote processing
-- Stores items by coupon code with product name and reason
-- Deduplicates by product ID
-- Cleared after messages are displayed
-
-**CouponPostObserver** (`src/Observer/CouponPostObserver.php`):
-- Listens to coupon application post-dispatch event
-- Retrieves excluded items from collector
-- Displays consolidated warning messages
-- Removes coupon from quote if no actual discount applied
-- Clears Magento's generic messages for better UX
-
-**Message Handling**:
-- Messages are grouped by `MessageGroups::DISCOUNT_EXCLUSION`
-- Session tracks processed product IDs via `SessionKeys::PROCESSED_PRODUCT_IDS`
-- Prevents duplicate messages for the same product in a single checkout session
-
-### Plugin Details
-
-The plugin is registered in `etc/di.xml`:
-```xml
-<type name="Magento\SalesRule\Model\Validator">
-    <plugin name="discount_exclusion_validator"
-            type="PixelPerfect\DiscountExclusion\Plugin\SalesRule\Model\ValidatorPlugin"
-            sortOrder="10"/>
-</type>
-```
-
-**Plugin Method Signature**:
-```php
-public function aroundProcess(
-    Validator $subject,
-    callable $proceed,
-    AbstractItem $item,
-    Rule $rule
-): Validator
-```
-
-**Return Values**:
-- Returns `$subject` without calling `$proceed()` → Blocks discount application
-- Returns `$proceed($item, $rule)` → Allows normal discount processing
 
 ### Event Observers
 
-Observers are registered in `etc/frontend/events.xml`:
 ```xml
+<!-- Cart page load: display queued messages, clear session -->
 <event name="controller_action_predispatch_checkout_cart_index">
     <observer name="discount_exclusion_cart_load"
               instance="PixelPerfect\DiscountExclusion\Observer\CartPageLoadObserver"/>
 </event>
 
+<!-- Coupon apply: display messages immediately, remove coupon if needed -->
 <event name="controller_action_postdispatch_checkout_cart_couponPost">
     <observer name="discount_exclusion_coupon_post"
               instance="PixelPerfect\DiscountExclusion\Observer\CouponPostObserver"/>
+</event>
+
+<!-- Cart changes: queue messages for cart page display -->
+<event name="controller_action_postdispatch_checkout_cart_add">
+    <observer name="discount_exclusion_cart_add"
+              instance="PixelPerfect\DiscountExclusion\Observer\CartUpdateObserver"/>
+</event>
+<event name="controller_action_postdispatch_checkout_cart_updatePost">
+    <observer name="discount_exclusion_cart_update"
+              instance="PixelPerfect\DiscountExclusion\Observer\CartUpdateObserver"/>
+</event>
+<event name="controller_action_postdispatch_checkout_cart_delete">
+    <observer name="discount_exclusion_cart_delete"
+              instance="PixelPerfect\DiscountExclusion\Observer\CartUpdateObserver"/>
 </event>
 ```
 
@@ -699,7 +532,6 @@ Observers are registered in `etc/frontend/events.xml`:
 
 - Magento 2.4.x or higher
 - PHP 8.2+
-- Modern Magento coding standards (constructor property promotion, typed properties)
 
 ## Installation
 
@@ -714,61 +546,42 @@ bin/magento cache:flush
 
 The module includes comprehensive unit tests for all core components.
 
-**Running Tests**:
 ```bash
 # Run all module tests
-bin/cli vendor/bin/phpunit -c dev/tests/unit/phpunit.xml.dist \
-    local-repository/pixelperfectat/magento2-module-discount-exclusion/Test/Unit
+vendor/bin/phpunit
 
 # Run specific test class
-bin/cli vendor/bin/phpunit -c dev/tests/unit/phpunit.xml.dist \
-    local-repository/pixelperfectat/magento2-module-discount-exclusion/Test/Unit/Service/DiscountExclusionManagerTest.php
+vendor/bin/phpunit Test/Unit/Service/MaxDiscountCalculatorTest.php
 ```
 
-**Test Coverage**:
+**Static analysis** (PHPStan level 6):
+```bash
+vendor/bin/phpstan analyse
+```
+
+**Test coverage**:
 - Guards: `Ampromo`, `CouponOnly`, `ZeroPrice`
 - Strategies: `SpecialPriceStrategy`, `CatalogRuleStrategy`
-- Services: `DiscountExclusionManager`, `ExclusionResultCollector`
-- Plugins: `ValidatorPlugin`
+- Services: `DiscountExclusionManager`, `ExclusionResultCollector`, `MaxDiscountCalculator`, `ExclusionMessageBuilder`
+- Observers: `CartPageLoadObserver`, `CartUpdateObserver`
+- Plugins: `ValidatorPlugin` (standard exclusion + bypass flows)
 
-## Debugging & Troubleshooting
+## Translations
 
-### Enable Debug Logging
+Supported locales: `en_US`, `de_DE`, `it_IT`, `fr_FR`, `es_ES`
 
-The module includes debug logging via `Psr\Log\LoggerInterface`. Check `var/log/debug.log` for entries prefixed with `DiscountExclusion:`.
+All exclusion messages, bypass messages, admin labels, and tooltips are translatable.
 
-### Enable Xdebug Breakpoints
+## Debugging
 
-Key breakpoints for debugging:
-- `ValidatorPlugin::aroundProcess()` - Entry point for discount validation
-- `DiscountExclusionManager::shouldExcludeFromDiscount()` - Decision logic
-- `CouponPostObserver::execute()` - Message display logic
-- Your custom guard/strategy classes - Verify they're being called
+The module logs to `var/log/debug.log` with the `DiscountExclusion:` prefix. Key breakpoints for debugging:
 
-### Common Issues
-
-**Discounts not being blocked**:
-1. Check if module is enabled in admin (`Stores → Configuration → Sales → Discount Exclusion`)
-2. Check if a guard is returning `false` (allowing discount)
-3. Verify strategies are returning `true` when they should exclude
-4. Confirm your classes are registered in `di.xml`
-5. Run `bin/magento cache:clean` after di.xml changes
-
-**Messages not displaying**:
-1. Check `CouponPostObserver` is triggered (add breakpoint or log)
-2. Verify `ExclusionResultCollector` has items (`hasAnyExcludedItems()`)
-3. Clear checkout session and try again
-4. Check `var/log/debug.log` for `DiscountExclusion:` entries
-
-**Automatic rules being blocked**:
-1. Ensure `CouponOnly` guard is registered and running
-2. Verify the rule has `coupon_type = 1` (no coupon needed)
-
-**Performance concerns**:
-1. Optimize guard order (cheap checks first)
-2. Avoid heavy database queries in guards
-3. Use caching within strategies if needed
-4. Consider using proxies for expensive dependencies
+- `ValidatorPlugin::aroundProcess()` — Entry point for discount validation
+- `ValidatorPlugin::handleBypass()` — Bypass flow with max-discount logic
+- `DiscountExclusionManager::shouldExcludeFromDiscount()` — Guard and strategy evaluation
+- `MaxDiscountCalculator::calculate()` — Max-discount computation
+- `CouponPostObserver::execute()` — Coupon apply message display
+- `CartUpdateObserver::execute()` — Cart change message queuing
 
 ## Roadmap
 
@@ -778,15 +591,6 @@ Key breakpoints for debugging:
 - Compatibility with third-party discount modules
 - GraphQL support for headless checkout
 
-## Contributing
-
-This module follows Magento coding standards and PHP 8.2+ syntax. When contributing:
-- Use strict types (`declare(strict_types=1)`)
-- Use constructor property promotion
-- Follow PSR-12 coding style
-- Add comprehensive PHPDoc blocks
-- Include unit tests for new functionality
-
 ## License
 
 See LICENSE.md for license details.
@@ -795,4 +599,4 @@ See LICENSE.md for license details.
 
 This module is under active development. APIs and behavior may change without backward compatibility guarantees until version 1.0.0.
 
-For issues, feature requests, or questions, please open an issue in the repository.
+For issues, feature requests, or questions, please [open an issue](https://github.com/pixelperfectat/magento2-module-discount-exclusion/issues).
