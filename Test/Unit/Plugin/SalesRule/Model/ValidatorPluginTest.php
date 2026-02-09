@@ -10,8 +10,11 @@ use Magento\SalesRule\Model\Validator;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use PixelPerfect\DiscountExclusion\Api\ConfigInterface;
+use PixelPerfect\DiscountExclusion\Api\Data\BypassResult;
+use PixelPerfect\DiscountExclusion\Api\Data\BypassResultType;
 use PixelPerfect\DiscountExclusion\Api\DiscountExclusionManagerInterface;
 use PixelPerfect\DiscountExclusion\Api\ExclusionResultCollectorInterface;
+use PixelPerfect\DiscountExclusion\Api\MaxDiscountCalculatorInterface;
 use PixelPerfect\DiscountExclusion\Plugin\SalesRule\Model\ValidatorPlugin;
 use Psr\Log\LoggerInterface;
 
@@ -21,6 +24,7 @@ class ValidatorPluginTest extends TestCase
     private ConfigInterface&MockObject $config;
     private DiscountExclusionManagerInterface&MockObject $discountExclusionManager;
     private ExclusionResultCollectorInterface&MockObject $resultCollector;
+    private MaxDiscountCalculatorInterface&MockObject $maxDiscountCalculator;
     private LoggerInterface&MockObject $logger;
     private Validator&MockObject $validator;
     private AbstractItem&MockObject $item;
@@ -33,6 +37,7 @@ class ValidatorPluginTest extends TestCase
         $this->config = $this->createMock(ConfigInterface::class);
         $this->discountExclusionManager = $this->createMock(DiscountExclusionManagerInterface::class);
         $this->resultCollector = $this->createMock(ExclusionResultCollectorInterface::class);
+        $this->maxDiscountCalculator = $this->createMock(MaxDiscountCalculatorInterface::class);
         $this->logger = $this->createMock(LoggerInterface::class);
         $this->validator = $this->createMock(Validator::class);
 
@@ -41,6 +46,7 @@ class ValidatorPluginTest extends TestCase
         $this->product->method('getName')->willReturn('Test Product');
         $this->product->method('getFinalPrice')->willReturn(29.99);
         $this->product->method('getPrice')->willReturn(39.99);
+        $this->product->method('getId')->willReturn('42');
 
         $this->quote = $this->getMockBuilder(Quote::class)
             ->disableOriginalConstructor()
@@ -54,25 +60,29 @@ class ValidatorPluginTest extends TestCase
             false,
             true,
             true,
-            ['getStoreId', 'getProduct', 'getQuote', 'getChildren', 'getParentItem']
+            ['getStoreId', 'getProduct', 'getQuote', 'getChildren', 'getParentItem', 'getQty', 'getDiscountAmount', 'setDiscountAmount']
         );
         $this->item->method('getStoreId')->willReturn(1);
         $this->item->method('getProduct')->willReturn($this->product);
         $this->item->method('getQuote')->willReturn($this->quote);
         $this->item->method('getChildren')->willReturn([]);
+        $this->item->method('getQty')->willReturn(1.0);
 
         $this->rule = $this->getMockBuilder(Rule::class)
             ->disableOriginalConstructor()
-            ->addMethods(['getName'])
-            ->onlyMethods(['getId'])
+            ->addMethods(['getName', 'getDiscountAmount'])
+            ->onlyMethods(['getId', 'getData', 'getSimpleAction'])
             ->getMock();
         $this->rule->method('getId')->willReturn(1);
         $this->rule->method('getName')->willReturn('Test Rule');
+        $this->rule->method('getSimpleAction')->willReturn(Rule::BY_PERCENT_ACTION);
+        $this->rule->method('getDiscountAmount')->willReturn(30.0);
 
         $this->plugin = new ValidatorPlugin(
             $this->config,
             $this->discountExclusionManager,
             $this->resultCollector,
+            $this->maxDiscountCalculator,
             $this->logger
         );
     }
@@ -127,6 +137,7 @@ class ValidatorPluginTest extends TestCase
         $this->config->method('isEnabled')->willReturn(true);
         $this->item->method('getParentItem')->willReturn(null);
         $this->quote->method('getCouponCode')->willReturn('TESTCODE');
+        $this->rule->method('getData')->with('bypass_discount_exclusion')->willReturn(0);
 
         $this->discountExclusionManager->method('shouldExcludeFromDiscount')
             ->willReturn(true);
@@ -148,6 +159,7 @@ class ValidatorPluginTest extends TestCase
         $this->config->method('isEnabled')->willReturn(true);
         $this->item->method('getParentItem')->willReturn(null);
         $this->quote->method('getCouponCode')->willReturn('TESTCODE');
+        $this->rule->method('getData')->with('bypass_discount_exclusion')->willReturn(0);
 
         $this->discountExclusionManager->method('shouldExcludeFromDiscount')
             ->willReturn(false);
@@ -168,6 +180,7 @@ class ValidatorPluginTest extends TestCase
         $this->config->method('isEnabled')->willReturn(true);
         $this->item->method('getParentItem')->willReturn(null);
         $this->quote->method('getCouponCode')->willReturn('TESTCODE');
+        $this->rule->method('getData')->with('bypass_discount_exclusion')->willReturn(0);
 
         $this->discountExclusionManager->method('shouldExcludeFromDiscount')
             ->willReturn(true);
@@ -190,6 +203,7 @@ class ValidatorPluginTest extends TestCase
         $this->config->method('isEnabled')->willReturn(true);
         $this->item->method('getParentItem')->willReturn(null);
         $this->quote->method('getCouponCode')->willReturn(null);
+        $this->rule->method('getData')->with('bypass_discount_exclusion')->willReturn(0);
 
         $this->discountExclusionManager->method('shouldExcludeFromDiscount')
             ->willReturn(true);
@@ -209,6 +223,7 @@ class ValidatorPluginTest extends TestCase
     {
         $this->config->method('isEnabled')->willReturn(true);
         $this->quote->method('getCouponCode')->willReturn('TESTCODE');
+        $this->rule->method('getData')->with('bypass_discount_exclusion')->willReturn(0);
 
         // Create child product
         $childProduct = $this->createMock(Product::class);
@@ -265,6 +280,7 @@ class ValidatorPluginTest extends TestCase
         $this->config->method('isEnabled')->willReturn(true);
         $this->item->method('getParentItem')->willReturn(null);
         $this->quote->method('getCouponCode')->willReturn('TESTCODE');
+        $this->rule->method('getData')->with('bypass_discount_exclusion')->willReturn(0);
 
         $this->discountExclusionManager->method('shouldExcludeFromDiscount')
             ->willReturn(false);
@@ -283,6 +299,7 @@ class ValidatorPluginTest extends TestCase
         $this->config->method('isEnabled')->willReturn(true);
         $this->item->method('getParentItem')->willReturn(null);
         $this->quote->method('getCouponCode')->willReturn('TESTCODE');
+        $this->rule->method('getData')->with('bypass_discount_exclusion')->willReturn(0);
 
         $this->discountExclusionManager->method('shouldExcludeFromDiscount')
             ->willReturn(true);
@@ -301,12 +318,201 @@ class ValidatorPluginTest extends TestCase
         $this->config->method('isEnabled')->willReturn(true);
         $this->item->method('getParentItem')->willReturn(null);
         $this->quote->method('getCouponCode')->willReturn('');
+        $this->rule->method('getData')->with('bypass_discount_exclusion')->willReturn(0);
 
         $this->discountExclusionManager->method('shouldExcludeFromDiscount')
             ->willReturn(true);
 
         $this->resultCollector->expects($this->never())
             ->method('addExcludedItem');
+
+        $proceed = fn($item, $rule) => $this->validator;
+
+        $this->plugin->aroundProcess($this->validator, $proceed, $this->item, $this->rule);
+    }
+
+    // --- Bypass tests ---
+
+    public function testBypassOnNonDiscountedProductCallsProceed(): void
+    {
+        $this->config->method('isEnabled')->willReturn(true);
+        $this->item->method('getParentItem')->willReturn(null);
+        $this->quote->method('getCouponCode')->willReturn('BYPASS30');
+        $this->rule->method('getData')->with('bypass_discount_exclusion')->willReturn(1);
+
+        // Product is NOT already discounted
+        $this->discountExclusionManager->method('shouldExcludeFromDiscount')
+            ->willReturn(false);
+
+        // Calculator should NOT be called
+        $this->maxDiscountCalculator->expects($this->never())
+            ->method('calculate');
+
+        $proceeded = false;
+        $proceed = function ($item, $rule) use (&$proceeded) {
+            $proceeded = true;
+            return $this->validator;
+        };
+
+        $this->plugin->aroundProcess($this->validator, $proceed, $this->item, $this->rule);
+
+        $this->assertTrue($proceeded, 'Proceed should be called for non-discounted product with bypass');
+    }
+
+    public function testBypassAdjustedCapsDiscount(): void
+    {
+        $this->config->method('isEnabled')->willReturn(true);
+        $this->item->method('getParentItem')->willReturn(null);
+        $this->quote->method('getCouponCode')->willReturn('BYPASS30');
+        $this->rule->method('getData')->with('bypass_discount_exclusion')->willReturn(1);
+
+        // Product IS already discounted
+        $this->discountExclusionManager->method('shouldExcludeFromDiscount')
+            ->willReturn(true);
+
+        // Calculator returns ADJUSTED with €5 per unit, 1 unit
+        $bypassResult = new BypassResult(
+            type: BypassResultType::ADJUSTED,
+            additionalDiscount: 5.0,
+            maxAllowedTotal: 5.0,
+            regularPrice: 100.0,
+            currentPrice: 75.0,
+            existingDiscountAmount: 25.0,
+            ruleDiscountFromRegular: 30.0,
+            existingDiscountPercent: 25.0,
+            ruleDiscountPercent: 30.0,
+            qty: 1.0,
+        );
+        $this->maxDiscountCalculator->method('calculate')->willReturn($bypassResult);
+
+        // Simulate: discount was 0 before, Magento sets it to 22.50 (30% of €75)
+        $discountSequence = [0.0]; // getDiscountAmount returns 0 first
+        $this->item->method('getDiscountAmount')
+            ->willReturnCallback(function () use (&$discountSequence) {
+                return array_shift($discountSequence) ?? 22.50;
+            });
+
+        $this->item->expects($this->once())
+            ->method('setDiscountAmount')
+            ->with(5.0); // capped: 0 + 5 = 5
+
+        $proceeded = false;
+        $proceed = function ($item, $rule) use (&$proceeded) {
+            $proceeded = true;
+            return $this->validator;
+        };
+
+        $this->plugin->aroundProcess($this->validator, $proceed, $this->item, $this->rule);
+
+        $this->assertTrue($proceeded, 'Proceed should be called for adjusted bypass');
+    }
+
+    public function testBypassExistingBetterBlocksDiscount(): void
+    {
+        $this->config->method('isEnabled')->willReturn(true);
+        $this->item->method('getParentItem')->willReturn(null);
+        $this->quote->method('getCouponCode')->willReturn('BYPASS20');
+        $this->rule->method('getData')->with('bypass_discount_exclusion')->willReturn(1);
+
+        $this->discountExclusionManager->method('shouldExcludeFromDiscount')
+            ->willReturn(true);
+
+        $bypassResult = new BypassResult(
+            type: BypassResultType::EXISTING_BETTER,
+            additionalDiscount: 0.0,
+            maxAllowedTotal: 0.0,
+            regularPrice: 100.0,
+            currentPrice: 75.0,
+            existingDiscountAmount: 25.0,
+            ruleDiscountFromRegular: 20.0,
+            existingDiscountPercent: 25.0,
+            ruleDiscountPercent: 20.0,
+            qty: 1.0,
+        );
+        $this->maxDiscountCalculator->method('calculate')->willReturn($bypassResult);
+
+        $proceeded = false;
+        $proceed = function ($item, $rule) use (&$proceeded) {
+            $proceeded = true;
+            return $this->validator;
+        };
+
+        $this->plugin->aroundProcess($this->validator, $proceed, $this->item, $this->rule);
+
+        $this->assertFalse($proceeded, 'Proceed should NOT be called when existing discount is better');
+    }
+
+    public function testBypassStackingFallbackCallsProceed(): void
+    {
+        $this->config->method('isEnabled')->willReturn(true);
+        $this->item->method('getParentItem')->willReturn(null);
+        $this->quote->method('getCouponCode')->willReturn('BYPASSCART');
+        $this->rule->method('getData')->with('bypass_discount_exclusion')->willReturn(1);
+
+        $this->discountExclusionManager->method('shouldExcludeFromDiscount')
+            ->willReturn(true);
+
+        $bypassResult = new BypassResult(
+            type: BypassResultType::STACKING_FALLBACK,
+            additionalDiscount: 0.0,
+            maxAllowedTotal: 0.0,
+            regularPrice: 100.0,
+            currentPrice: 75.0,
+            existingDiscountAmount: 0.0,
+            ruleDiscountFromRegular: 0.0,
+            existingDiscountPercent: 0.0,
+            ruleDiscountPercent: 0.0,
+            qty: 1.0,
+        );
+        $this->maxDiscountCalculator->method('calculate')->willReturn($bypassResult);
+
+        $proceeded = false;
+        $proceed = function ($item, $rule) use (&$proceeded) {
+            $proceeded = true;
+            return $this->validator;
+        };
+
+        $this->plugin->aroundProcess($this->validator, $proceed, $this->item, $this->rule);
+
+        $this->assertTrue($proceeded, 'Proceed should be called for stacking fallback');
+    }
+
+    public function testBypassRecordsInCollector(): void
+    {
+        $this->config->method('isEnabled')->willReturn(true);
+        $this->item->method('getParentItem')->willReturn(null);
+        $this->quote->method('getCouponCode')->willReturn('BYPASS30');
+        $this->rule->method('getData')->with('bypass_discount_exclusion')->willReturn(1);
+
+        $this->discountExclusionManager->method('shouldExcludeFromDiscount')
+            ->willReturn(true);
+
+        $bypassResult = new BypassResult(
+            type: BypassResultType::EXISTING_BETTER,
+            additionalDiscount: 0.0,
+            maxAllowedTotal: 0.0,
+            regularPrice: 100.0,
+            currentPrice: 75.0,
+            existingDiscountAmount: 25.0,
+            ruleDiscountFromRegular: 20.0,
+            existingDiscountPercent: 25.0,
+            ruleDiscountPercent: 20.0,
+            qty: 1.0,
+        );
+        $this->maxDiscountCalculator->method('calculate')->willReturn($bypassResult);
+
+        $this->resultCollector->expects($this->once())
+            ->method('addBypassedItem')
+            ->with(
+                $this->item,
+                BypassResultType::EXISTING_BETTER,
+                'BYPASS30',
+                $this->callback(function (array $params) {
+                    return $params['simpleAction'] === Rule::BY_PERCENT_ACTION
+                        && $params['ruleDiscountPercent'] === 20.0
+                        && $params['existingDiscountPercent'] === 25.0;
+                })
+            );
 
         $proceed = fn($item, $rule) => $this->validator;
 

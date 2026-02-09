@@ -2,12 +2,16 @@
 
 namespace PixelPerfect\DiscountExclusion\Plugin\SalesRule\Model;
 
+use Magento\Catalog\Model\Product;
 use Magento\Quote\Model\Quote\Item\AbstractItem;
 use Magento\SalesRule\Model\Rule;
 use Magento\SalesRule\Model\Validator;
 use PixelPerfect\DiscountExclusion\Api\ConfigInterface;
+use PixelPerfect\DiscountExclusion\Api\Data\BypassResult;
+use PixelPerfect\DiscountExclusion\Api\Data\BypassResultType;
 use PixelPerfect\DiscountExclusion\Api\DiscountExclusionManagerInterface;
 use PixelPerfect\DiscountExclusion\Api\ExclusionResultCollectorInterface;
+use PixelPerfect\DiscountExclusion\Api\MaxDiscountCalculatorInterface;
 use Psr\Log\LoggerInterface;
 
 class ValidatorPlugin
@@ -16,6 +20,7 @@ class ValidatorPlugin
         private readonly ConfigInterface                    $config,
         private readonly DiscountExclusionManagerInterface  $discountExclusionManager,
         private readonly ExclusionResultCollectorInterface  $resultCollector,
+        private readonly MaxDiscountCalculatorInterface     $maxDiscountCalculator,
         private readonly LoggerInterface                    $logger
     ) {
     }
@@ -62,7 +67,187 @@ class ValidatorPlugin
             'regular_price' => $product->getPrice(),
         ]);
 
-        // Check if the product should be excluded from additional discounts
+        // Check if this rule has bypass enabled
+        $hasBypass = (bool) $rule->getData('bypass_discount_exclusion');
+
+        if ($hasBypass) {
+            return $this->handleBypass($subject, $proceed, $item, $rule, $product, $couponCode);
+        }
+
+        return $this->handleStandardExclusion($subject, $proceed, $item, $rule, $product, $couponCode);
+    }
+
+    /**
+     * Handle bypass flow: max(existing, rule) logic
+     *
+     * @param Validator    $subject
+     * @param callable     $proceed
+     * @param AbstractItem $item
+     * @param Rule         $rule
+     * @param Product      $product
+     * @param string|null  $couponCode
+     *
+     * @return Validator
+     */
+    private function handleBypass(
+        Validator $subject,
+        callable $proceed,
+        AbstractItem $item,
+        Rule $rule,
+        Product $product,
+        ?string $couponCode,
+    ): Validator {
+        // Check if product is already discounted
+        $isAlreadyDiscounted = $this->discountExclusionManager->shouldExcludeFromDiscount(
+            $product,
+            $item,
+            $rule
+        );
+
+        // Product not already discounted — apply the discount normally
+        if (!$isAlreadyDiscounted) {
+            $this->logger->debug('DiscountExclusion: Bypass rule on non-discounted product, proceeding normally', [
+                'product_sku' => $product->getSku(),
+                'rule_id' => $rule->getId(),
+            ]);
+            return $proceed($item, $rule);
+        }
+
+        // Product is already discounted — calculate max discount
+        $bypassResult = $this->maxDiscountCalculator->calculate(
+            $product,
+            $rule,
+            (float) $item->getQty()
+        );
+
+        $this->logger->debug('DiscountExclusion: Bypass result', [
+            'product_sku' => $product->getSku(),
+            'rule_id' => $rule->getId(),
+            'type' => $bypassResult->type->value,
+            'additional_discount' => $bypassResult->additionalDiscount,
+            'max_allowed_total' => $bypassResult->maxAllowedTotal,
+        ]);
+
+        return match ($bypassResult->type) {
+            BypassResultType::STACKING_FALLBACK => $proceed($item, $rule),
+            BypassResultType::EXISTING_BETTER => $this->handleBypassExistingBetter(
+                $subject, $item, $rule, $couponCode, $bypassResult
+            ),
+            BypassResultType::ADJUSTED => $this->handleBypassAdjusted(
+                $subject, $proceed, $item, $rule, $couponCode, $bypassResult
+            ),
+        };
+    }
+
+    /**
+     * Handle bypass when existing discount is better — block and record
+     *
+     * @param Validator    $subject
+     * @param AbstractItem $item
+     * @param Rule         $rule
+     * @param string|null  $couponCode
+     * @param BypassResult $bypassResult
+     *
+     * @return Validator
+     */
+    private function handleBypassExistingBetter(
+        Validator $subject,
+        AbstractItem $item,
+        Rule $rule,
+        ?string $couponCode,
+        BypassResult $bypassResult,
+    ): Validator {
+        $this->logger->info('DiscountExclusion: Bypass existing better, blocking discount', [
+            'product_sku' => $this->getActualProduct($item)->getSku(),
+            'rule_id' => $rule->getId(),
+        ]);
+
+        if ($couponCode !== null && $couponCode !== '') {
+            $this->resultCollector->addBypassedItem(
+                $item,
+                BypassResultType::EXISTING_BETTER,
+                $couponCode,
+                $this->buildMessageParams($rule, $bypassResult),
+            );
+        }
+
+        return $subject;
+    }
+
+    /**
+     * Handle bypass when rule discount is larger — proceed then cap
+     *
+     * @param Validator    $subject
+     * @param callable     $proceed
+     * @param AbstractItem $item
+     * @param Rule         $rule
+     * @param string|null  $couponCode
+     * @param BypassResult $bypassResult
+     *
+     * @return Validator
+     */
+    private function handleBypassAdjusted(
+        Validator $subject,
+        callable $proceed,
+        AbstractItem $item,
+        Rule $rule,
+        ?string $couponCode,
+        BypassResult $bypassResult,
+    ): Validator {
+        // Record discount before proceed
+        $discountBefore = (float) $item->getDiscountAmount();
+
+        // Let Magento calculate the discount
+        $result = $proceed($item, $rule);
+
+        // Cap the discount to the max allowed
+        $discountAfter = (float) $item->getDiscountAmount();
+        $ruleDiscount = $discountAfter - $discountBefore;
+
+        if ($ruleDiscount > $bypassResult->maxAllowedTotal + 0.001) {
+            $cappedDiscount = $discountBefore + $bypassResult->maxAllowedTotal;
+            $item->setDiscountAmount($cappedDiscount);
+
+            $this->logger->info('DiscountExclusion: Capped bypass discount', [
+                'product_sku' => $this->getActualProduct($item)->getSku(),
+                'rule_id' => $rule->getId(),
+                'original_discount' => $ruleDiscount,
+                'capped_to' => $bypassResult->maxAllowedTotal,
+            ]);
+        }
+
+        if ($couponCode !== null && $couponCode !== '') {
+            $this->resultCollector->addBypassedItem(
+                $item,
+                BypassResultType::ADJUSTED,
+                $couponCode,
+                $this->buildMessageParams($rule, $bypassResult),
+            );
+        }
+
+        return $result;
+    }
+
+    /**
+     * Handle standard exclusion flow (no bypass)
+     *
+     * @param Validator    $subject
+     * @param callable     $proceed
+     * @param AbstractItem $item
+     * @param Rule         $rule
+     * @param Product      $product
+     * @param string|null  $couponCode
+     *
+     * @return Validator
+     */
+    private function handleStandardExclusion(
+        Validator $subject,
+        callable $proceed,
+        AbstractItem $item,
+        Rule $rule,
+        Product $product,
+        ?string $couponCode,
+    ): Validator {
         $shouldExclude = $this->discountExclusionManager->shouldExcludeFromDiscount(
             $product,
             $item,
@@ -77,7 +262,6 @@ class ValidatorPlugin
                 'coupon_code' => $couponCode,
             ]);
 
-            // Add to collector if we have a coupon code
             if ($couponCode !== null && $couponCode !== '') {
                 $this->resultCollector->addExcludedItem(
                     $item,
@@ -90,7 +274,6 @@ class ValidatorPlugin
                 ]);
             }
 
-            // Return subject without calling proceed - this blocks the discount
             return $subject;
         }
 
@@ -99,14 +282,34 @@ class ValidatorPlugin
             'rule_id' => $rule->getId(),
         ]);
 
-        // Allow discount by calling proceed
         return $proceed($item, $rule);
+    }
+
+    /**
+     * Build message parameters from rule and bypass result
+     *
+     * @param Rule         $rule
+     * @param BypassResult $bypassResult
+     *
+     * @return array<string, float|string>
+     */
+    private function buildMessageParams(Rule $rule, BypassResult $bypassResult): array
+    {
+        return [
+            'simpleAction' => (string) $rule->getSimpleAction(),
+            'ruleDiscountPercent' => $bypassResult->ruleDiscountPercent,
+            'existingDiscountPercent' => $bypassResult->existingDiscountPercent,
+            'additionalDiscountPercent' => $bypassResult->ruleDiscountPercent - $bypassResult->existingDiscountPercent,
+            'ruleDiscountAmount' => $bypassResult->ruleDiscountFromRegular,
+            'existingDiscountAmount' => $bypassResult->existingDiscountAmount,
+            'additionalDiscountAmount' => $bypassResult->additionalDiscount,
+        ];
     }
 
     /**
      * Get the actual product (handle configurable products by using child product)
      */
-    private function getActualProduct(AbstractItem $item): \Magento\Catalog\Model\Product
+    private function getActualProduct(AbstractItem $item): Product
     {
         $product = $item->getProduct();
         $children = $item->getChildren();
@@ -128,7 +331,6 @@ class ValidatorPlugin
      */
     private function getCouponCode(AbstractItem $item): ?string
     {
-        // Get from the item's quote - this is the SAME instance the controller uses
         $quote = $item->getQuote();
         if ($quote !== null) {
             $couponCode = $quote->getCouponCode();
