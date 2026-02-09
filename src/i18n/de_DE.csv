@@ -1,5 +1,5 @@
-"Coupon %2 was not applied to Product ""%1"" because it is already discounted.","Gutscheincode %2 wurde nicht auf Produkt ""%1"" angewendet, da es bereits reduziert ist."
-"Product ""%1"" it is already discounted, and cannot be discounted again.","Produkt ""%1"" ist bereits reduziert und kann nicht erneut reduziert werden."
+"Coupon ""%1"" was not applied to ""%2"" because it is already discounted.","Gutschein ""%1"" wurde nicht auf ""%2"" angewendet, da das Produkt bereits reduziert ist."
+"Coupon ""%1"" was not applied to the following products because they are already discounted: %2","Gutschein ""%1"" wurde nicht auf folgende Produkte angewendet, da sie bereits reduziert sind: %2"
 "Discount Exclusion","Rabattausschluss"
 "General","Allgemein"
 "Enable Module","Modul aktivieren"

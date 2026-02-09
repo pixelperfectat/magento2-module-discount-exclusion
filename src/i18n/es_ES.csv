@@ -1,3 +1,5 @@
+"Coupon ""%1"" was not applied to ""%2"" because it is already discounted.","El cupón ""%1"" no se aplicó a ""%2"" porque el producto ya está rebajado."
+"Coupon ""%1"" was not applied to the following products because they are already discounted: %2","El cupón ""%1"" no se aplicó a los siguientes productos porque ya están rebajados: %2"
 "Discount Exclusion","Exclusión de Descuento"
 "General","General"
 "Enable Module","Habilitar Módulo"
