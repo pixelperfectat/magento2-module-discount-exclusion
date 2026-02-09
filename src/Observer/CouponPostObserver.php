@@ -198,7 +198,7 @@ class CouponPostObserver implements ObserverInterface
     ): ?\Magento\Framework\Phrase {
         if ($type === BypassResultType::ADJUSTED && $simpleAction === Rule::BY_PERCENT_ACTION) {
             return __(
-                'Coupon "%1" applied an additional %2%% discount to "%3", adjusted from %4%% because it is already %5%% discounted.',
+                'Coupon "%1" applied an additional %2% discount to "%3", adjusted from %4% because it is already %5% discounted.',
                 $couponCode,
                 number_format((float) ($params['additionalDiscountPercent'] ?? 0), 0),
                 $productName,
@@ -220,7 +220,7 @@ class CouponPostObserver implements ObserverInterface
 
         if ($type === BypassResultType::EXISTING_BETTER && $simpleAction === Rule::BY_PERCENT_ACTION) {
             return __(
-                'Coupon "%1" was not applied to "%2" because the existing %3%% discount already exceeds the coupon\'s %4%% discount.',
+                'Coupon "%1" was not applied to "%2" because the existing %3% discount already exceeds the coupon\'s %4% discount.',
                 $couponCode,
                 $productName,
                 number_format((float) ($params['existingDiscountPercent'] ?? 0), 0),
