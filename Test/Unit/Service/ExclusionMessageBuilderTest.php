@@ -30,18 +30,17 @@ class ExclusionMessageBuilderTest extends TestCase
         );
     }
 
-    public function testNoMessagesWhenCollectorIsEmpty(): void
+    public function testBuildReturnsEmptyArrayWhenCollectorIsEmpty(): void
     {
         $this->resultCollector->method('hasExcludedItems')->willReturn(false);
         $this->resultCollector->method('hasBypassedItems')->willReturn(false);
 
-        $this->messageManager->expects($this->never())->method('addWarningMessage');
-        $this->messageManager->expects($this->never())->method('addNoticeMessage');
+        $messages = $this->builder->buildMessagesForCoupon('SAVE10');
 
-        $this->builder->addMessagesForCoupon('SAVE10');
+        $this->assertEmpty($messages);
     }
 
-    public function testExclusionMessageForSingleProduct(): void
+    public function testBuildExclusionMessageForSingleProduct(): void
     {
         $this->resultCollector->method('hasExcludedItems')->willReturn(true);
         $this->resultCollector->method('hasBypassedItems')->willReturn(false);
@@ -49,14 +48,14 @@ class ExclusionMessageBuilderTest extends TestCase
             '100' => ['name' => 'Widget A', 'reason' => 'Already discounted'],
         ]);
 
-        $this->messageManager->expects($this->once())
-            ->method('addWarningMessage')
-            ->with($this->stringContains('Widget A'));
+        $messages = $this->builder->buildMessagesForCoupon('SAVE10');
 
-        $this->builder->addMessagesForCoupon('SAVE10');
+        $this->assertCount(1, $messages);
+        $this->assertEquals('warning', $messages[0]['type']);
+        $this->assertStringContainsString('Widget A', $messages[0]['text']);
     }
 
-    public function testExclusionMessageForMultipleProducts(): void
+    public function testBuildExclusionMessageForMultipleProducts(): void
     {
         $this->resultCollector->method('hasExcludedItems')->willReturn(true);
         $this->resultCollector->method('hasBypassedItems')->willReturn(false);
@@ -65,14 +64,14 @@ class ExclusionMessageBuilderTest extends TestCase
             '200' => ['name' => 'Widget B', 'reason' => 'Already discounted'],
         ]);
 
-        $this->messageManager->expects($this->once())
-            ->method('addWarningMessage')
-            ->with($this->stringContains('following products'));
+        $messages = $this->builder->buildMessagesForCoupon('SAVE10');
 
-        $this->builder->addMessagesForCoupon('SAVE10');
+        $this->assertCount(1, $messages);
+        $this->assertEquals('warning', $messages[0]['type']);
+        $this->assertStringContainsString('following products', $messages[0]['text']);
     }
 
-    public function testBypassAdjustedPercentMessage(): void
+    public function testBuildBypassAdjustedPercentMessage(): void
     {
         $this->resultCollector->method('hasExcludedItems')->willReturn(false);
         $this->resultCollector->method('hasBypassedItems')->willReturn(true);
@@ -89,14 +88,14 @@ class ExclusionMessageBuilderTest extends TestCase
             ],
         ]);
 
-        $this->messageManager->expects($this->once())
-            ->method('addNoticeMessage')
-            ->with($this->stringContains('additional'));
+        $messages = $this->builder->buildMessagesForCoupon('SAVE30');
 
-        $this->builder->addMessagesForCoupon('SAVE30');
+        $this->assertCount(1, $messages);
+        $this->assertEquals('notice', $messages[0]['type']);
+        $this->assertStringContainsString('additional', $messages[0]['text']);
     }
 
-    public function testBypassAdjustedFixedMessage(): void
+    public function testBuildBypassAdjustedFixedMessage(): void
     {
         $this->resultCollector->method('hasExcludedItems')->willReturn(false);
         $this->resultCollector->method('hasBypassedItems')->willReturn(true);
@@ -116,14 +115,14 @@ class ExclusionMessageBuilderTest extends TestCase
         $this->priceCurrency->method('format')
             ->willReturnCallback(fn(float $amount) => '€' . number_format($amount, 2));
 
-        $this->messageManager->expects($this->once())
-            ->method('addNoticeMessage')
-            ->with($this->stringContains('additional'));
+        $messages = $this->builder->buildMessagesForCoupon('SAVE10');
 
-        $this->builder->addMessagesForCoupon('SAVE10');
+        $this->assertCount(1, $messages);
+        $this->assertEquals('notice', $messages[0]['type']);
+        $this->assertStringContainsString('additional', $messages[0]['text']);
     }
 
-    public function testBypassExistingBetterPercentMessage(): void
+    public function testBuildBypassExistingBetterPercentMessage(): void
     {
         $this->resultCollector->method('hasExcludedItems')->willReturn(false);
         $this->resultCollector->method('hasBypassedItems')->willReturn(true);
@@ -139,14 +138,14 @@ class ExclusionMessageBuilderTest extends TestCase
             ],
         ]);
 
-        $this->messageManager->expects($this->once())
-            ->method('addWarningMessage')
-            ->with($this->stringContains('exceeds'));
+        $messages = $this->builder->buildMessagesForCoupon('SAVE20');
 
-        $this->builder->addMessagesForCoupon('SAVE20');
+        $this->assertCount(1, $messages);
+        $this->assertEquals('warning', $messages[0]['type']);
+        $this->assertStringContainsString('exceeds', $messages[0]['text']);
     }
 
-    public function testBypassExistingBetterFixedMessage(): void
+    public function testBuildBypassExistingBetterFixedMessage(): void
     {
         $this->resultCollector->method('hasExcludedItems')->willReturn(false);
         $this->resultCollector->method('hasBypassedItems')->willReturn(true);
@@ -165,14 +164,58 @@ class ExclusionMessageBuilderTest extends TestCase
         $this->priceCurrency->method('format')
             ->willReturnCallback(fn(float $amount) => '€' . number_format($amount, 2));
 
-        $this->messageManager->expects($this->once())
-            ->method('addWarningMessage')
-            ->with($this->stringContains('exceeds'));
+        $messages = $this->builder->buildMessagesForCoupon('SAVE5');
 
-        $this->builder->addMessagesForCoupon('SAVE5');
+        $this->assertCount(1, $messages);
+        $this->assertEquals('warning', $messages[0]['type']);
+        $this->assertStringContainsString('exceeds', $messages[0]['text']);
     }
 
-    public function testCombinedExclusionAndBypassMessages(): void
+    public function testBuildCombinedExclusionAndBypassMessages(): void
+    {
+        $this->resultCollector->method('hasExcludedItems')->willReturn(true);
+        $this->resultCollector->method('hasBypassedItems')->willReturn(true);
+        $this->resultCollector->method('getExcludedItems')->willReturn([
+            '100' => ['name' => 'Excluded Product', 'reason' => 'Already discounted'],
+        ]);
+        $this->resultCollector->method('getBypassedItems')->willReturn([
+            '200' => [
+                'name' => 'Bypassed Product',
+                'type' => BypassResultType::ADJUSTED,
+                'messageParams' => [
+                    'simpleAction' => 'by_percent',
+                    'ruleDiscountPercent' => 30.0,
+                    'existingDiscountPercent' => 25.0,
+                    'additionalDiscountPercent' => 5.0,
+                ],
+            ],
+        ]);
+
+        $messages = $this->builder->buildMessagesForCoupon('SAVE30');
+
+        $this->assertCount(2, $messages);
+        $this->assertEquals('warning', $messages[0]['type']);
+        $this->assertEquals('notice', $messages[1]['type']);
+    }
+
+    public function testBuildStackingFallbackProducesNoMessage(): void
+    {
+        $this->resultCollector->method('hasExcludedItems')->willReturn(false);
+        $this->resultCollector->method('hasBypassedItems')->willReturn(true);
+        $this->resultCollector->method('getBypassedItems')->willReturn([
+            '100' => [
+                'name' => 'Widget A',
+                'type' => BypassResultType::STACKING_FALLBACK,
+                'messageParams' => ['simpleAction' => 'cart_fixed'],
+            ],
+        ]);
+
+        $messages = $this->builder->buildMessagesForCoupon('SAVE10');
+
+        $this->assertEmpty($messages);
+    }
+
+    public function testAddMessagesForCouponDelegatesToBuild(): void
     {
         $this->resultCollector->method('hasExcludedItems')->willReturn(true);
         $this->resultCollector->method('hasBypassedItems')->willReturn(true);
@@ -197,25 +240,5 @@ class ExclusionMessageBuilderTest extends TestCase
         $this->messageManager->expects($this->once())->method('addNoticeMessage');
 
         $this->builder->addMessagesForCoupon('SAVE30');
-    }
-
-    public function testStackingFallbackProducesNoMessage(): void
-    {
-        $this->resultCollector->method('hasExcludedItems')->willReturn(false);
-        $this->resultCollector->method('hasBypassedItems')->willReturn(true);
-        $this->resultCollector->method('getBypassedItems')->willReturn([
-            '100' => [
-                'name' => 'Widget A',
-                'type' => BypassResultType::STACKING_FALLBACK,
-                'messageParams' => [
-                    'simpleAction' => 'cart_fixed',
-                ],
-            ],
-        ]);
-
-        $this->messageManager->expects($this->never())->method('addWarningMessage');
-        $this->messageManager->expects($this->never())->method('addNoticeMessage');
-
-        $this->builder->addMessagesForCoupon('SAVE10');
     }
 }

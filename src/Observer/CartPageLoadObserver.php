@@ -5,26 +5,39 @@ namespace PixelPerfect\DiscountExclusion\Observer;
 use Magento\Checkout\Model\Session;
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
+use Magento\Framework\Message\ManagerInterface;
 use PixelPerfect\DiscountExclusion\Model\SessionKeys;
 
 /**
- * Observer to clear processed product IDs from session when cart page is loaded
+ * Displays queued discount exclusion messages on cart page load
+ *
+ * Messages are queued by CartUpdateObserver during add/update/delete actions
+ * and displayed here when the cart page is loaded.
  */
 class CartPageLoadObserver implements ObserverInterface
 {
     public function __construct(
-        private readonly Session $checkoutSession
+        private readonly Session $checkoutSession,
+        private readonly ManagerInterface $messageManager,
     ) {
     }
 
     public function execute(Observer $observer): void
     {
-        $request = $observer->getEvent()->getRequest();
-        $controllerAction = $observer->getEvent()->getControllerAction();
+        // Display queued discount exclusion messages
+        $messages = $this->checkoutSession->getData(SessionKeys::QUEUED_DISCOUNT_MESSAGES, true);
 
-        // Clear session data when cart page is loaded
-        if ($controllerAction instanceof \Magento\Checkout\Controller\Cart\Index) {
-            $this->checkoutSession->unsetData(SessionKeys::PROCESSED_PRODUCT_IDS);
+        if (!empty($messages)) {
+            foreach ($messages as $message) {
+                if ($message['type'] === 'notice') {
+                    $this->messageManager->addNoticeMessage($message['text']);
+                } else {
+                    $this->messageManager->addWarningMessage($message['text']);
+                }
+            }
         }
+
+        // Clear processed product IDs
+        $this->checkoutSession->unsetData(SessionKeys::PROCESSED_PRODUCT_IDS);
     }
 }

@@ -7,14 +7,15 @@ use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use PixelPerfect\DiscountExclusion\Api\ExclusionMessageBuilderInterface;
 use PixelPerfect\DiscountExclusion\Api\ExclusionResultCollectorInterface;
+use PixelPerfect\DiscountExclusion\Model\SessionKeys;
 use Psr\Log\LoggerInterface;
 
 /**
- * Shows exclusion/bypass messages when cart changes while a coupon is active
+ * Queues exclusion/bypass messages for display on the cart page
  *
  * Fires on cart add, update, and delete actions. The ValidatorPlugin has already
- * populated the collector during collectTotals() — this observer reads and displays
- * the results.
+ * populated the collector during collectTotals() — this observer builds the messages
+ * and queues them in the session for CartPageLoadObserver to display.
  */
 class CartUpdateObserver implements ObserverInterface
 {
@@ -48,13 +49,16 @@ class CartUpdateObserver implements ObserverInterface
             return;
         }
 
-        $this->logger->debug('DiscountExclusion: CartUpdateObserver adding messages', [
-            'coupon_code' => $couponCode,
-            'has_excluded' => $hasExcluded,
-            'has_bypassed' => $hasBypassed,
-        ]);
+        $messages = $this->messageBuilder->buildMessagesForCoupon($couponCode);
 
-        $this->messageBuilder->addMessagesForCoupon($couponCode);
+        if (!empty($messages)) {
+            $this->logger->debug('DiscountExclusion: CartUpdateObserver queuing messages for cart page', [
+                'coupon_code' => $couponCode,
+                'message_count' => count($messages),
+            ]);
+            $this->checkoutSession->setData(SessionKeys::QUEUED_DISCOUNT_MESSAGES, $messages);
+        }
+
         $this->resultCollector->clear();
     }
 

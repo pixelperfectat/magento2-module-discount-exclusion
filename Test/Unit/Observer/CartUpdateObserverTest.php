@@ -9,6 +9,7 @@ use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use PixelPerfect\DiscountExclusion\Api\ExclusionMessageBuilderInterface;
 use PixelPerfect\DiscountExclusion\Api\ExclusionResultCollectorInterface;
+use PixelPerfect\DiscountExclusion\Model\SessionKeys;
 use PixelPerfect\DiscountExclusion\Observer\CartUpdateObserver;
 use Psr\Log\LoggerInterface;
 
@@ -24,7 +25,11 @@ class CartUpdateObserverTest extends TestCase
     {
         $this->resultCollector = $this->createMock(ExclusionResultCollectorInterface::class);
         $this->messageBuilder = $this->createMock(ExclusionMessageBuilderInterface::class);
-        $this->checkoutSession = $this->createMock(CheckoutSession::class);
+        $this->checkoutSession = $this->getMockBuilder(CheckoutSession::class)
+            ->disableOriginalConstructor()
+            ->addMethods(['setData'])
+            ->onlyMethods(['getQuote'])
+            ->getMock();
         $logger = $this->createMock(LoggerInterface::class);
 
         $this->quote = $this->getMockBuilder(Quote::class)
@@ -46,7 +51,8 @@ class CartUpdateObserverTest extends TestCase
         $this->quote->method('getCouponCode')->willReturn(null);
 
         $this->resultCollector->expects($this->once())->method('clear');
-        $this->messageBuilder->expects($this->never())->method('addMessagesForCoupon');
+        $this->messageBuilder->expects($this->never())->method('buildMessagesForCoupon');
+        $this->checkoutSession->expects($this->never())->method('setData');
 
         $this->observer->execute($this->createMock(Observer::class));
     }
@@ -56,7 +62,7 @@ class CartUpdateObserverTest extends TestCase
         $this->quote->method('getCouponCode')->willReturn('');
 
         $this->resultCollector->expects($this->once())->method('clear');
-        $this->messageBuilder->expects($this->never())->method('addMessagesForCoupon');
+        $this->messageBuilder->expects($this->never())->method('buildMessagesForCoupon');
 
         $this->observer->execute($this->createMock(Observer::class));
     }
@@ -69,51 +75,63 @@ class CartUpdateObserverTest extends TestCase
         $this->resultCollector->method('hasBypassedItems')->with('SAVE10')->willReturn(false);
 
         $this->resultCollector->expects($this->once())->method('clear');
-        $this->messageBuilder->expects($this->never())->method('addMessagesForCoupon');
+        $this->messageBuilder->expects($this->never())->method('buildMessagesForCoupon');
 
         $this->observer->execute($this->createMock(Observer::class));
     }
 
-    public function testCouponWithExcludedItemsAddsMessages(): void
+    public function testCouponWithExcludedItemsQueuesMessages(): void
     {
         $this->quote->method('getCouponCode')->willReturn('SAVE10');
 
         $this->resultCollector->method('hasExcludedItems')->with('SAVE10')->willReturn(true);
         $this->resultCollector->method('hasBypassedItems')->with('SAVE10')->willReturn(false);
 
+        $expectedMessages = [['type' => 'warning', 'text' => 'Test warning']];
         $this->messageBuilder->expects($this->once())
-            ->method('addMessagesForCoupon')
-            ->with('SAVE10');
+            ->method('buildMessagesForCoupon')
+            ->with('SAVE10')
+            ->willReturn($expectedMessages);
+
+        $this->checkoutSession->expects($this->once())
+            ->method('setData')
+            ->with(SessionKeys::QUEUED_DISCOUNT_MESSAGES, $expectedMessages);
+
         $this->resultCollector->expects($this->once())->method('clear');
 
         $this->observer->execute($this->createMock(Observer::class));
     }
 
-    public function testCouponWithBypassedItemsAddsMessages(): void
+    public function testCouponWithBypassedItemsQueuesMessages(): void
     {
         $this->quote->method('getCouponCode')->willReturn('SAVE30');
 
         $this->resultCollector->method('hasExcludedItems')->with('SAVE30')->willReturn(false);
         $this->resultCollector->method('hasBypassedItems')->with('SAVE30')->willReturn(true);
 
+        $expectedMessages = [['type' => 'notice', 'text' => 'Test notice']];
         $this->messageBuilder->expects($this->once())
-            ->method('addMessagesForCoupon')
-            ->with('SAVE30');
-        $this->resultCollector->expects($this->once())->method('clear');
+            ->method('buildMessagesForCoupon')
+            ->with('SAVE30')
+            ->willReturn($expectedMessages);
+
+        $this->checkoutSession->expects($this->once())
+            ->method('setData')
+            ->with(SessionKeys::QUEUED_DISCOUNT_MESSAGES, $expectedMessages);
 
         $this->observer->execute($this->createMock(Observer::class));
     }
 
-    public function testCouponWithBothExcludedAndBypassedAddsMessages(): void
+    public function testEmptyBuildResultDoesNotQueueToSession(): void
     {
-        $this->quote->method('getCouponCode')->willReturn('SAVE30');
+        $this->quote->method('getCouponCode')->willReturn('SAVE10');
 
-        $this->resultCollector->method('hasExcludedItems')->with('SAVE30')->willReturn(true);
-        $this->resultCollector->method('hasBypassedItems')->with('SAVE30')->willReturn(true);
+        $this->resultCollector->method('hasExcludedItems')->willReturn(true);
+        $this->resultCollector->method('hasBypassedItems')->willReturn(false);
 
-        $this->messageBuilder->expects($this->once())
-            ->method('addMessagesForCoupon')
-            ->with('SAVE30');
+        $this->messageBuilder->method('buildMessagesForCoupon')->willReturn([]);
+
+        $this->checkoutSession->expects($this->never())->method('setData');
         $this->resultCollector->expects($this->once())->method('clear');
 
         $this->observer->execute($this->createMock(Observer::class));

@@ -18,4 +18,16 @@ interface ExclusionMessageBuilderInterface
      * @return void
      */
     public function addMessagesForCoupon(string $couponCode): void;
+
+    /**
+     * Build exclusion and bypass messages without adding them
+     *
+     * Returns an array of messages with their type, suitable for
+     * queuing in the session for later display.
+     *
+     * @param string $couponCode
+     *
+     * @return array<int, array{type: string, text: string}>
+     */
+    public function buildMessagesForCoupon(string $couponCode): array;
 }

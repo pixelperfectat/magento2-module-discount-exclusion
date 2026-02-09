@@ -23,21 +23,41 @@ class ExclusionMessageBuilder implements ExclusionMessageBuilderInterface
      */
     public function addMessagesForCoupon(string $couponCode): void
     {
-        if ($this->resultCollector->hasExcludedItems($couponCode)) {
-            $this->addExclusionMessages($couponCode);
-        }
-
-        if ($this->resultCollector->hasBypassedItems($couponCode)) {
-            $this->addBypassMessages($couponCode);
+        foreach ($this->buildMessagesForCoupon($couponCode) as $message) {
+            if ($message['type'] === 'notice') {
+                $this->messageManager->addNoticeMessage($message['text']);
+            } else {
+                $this->messageManager->addWarningMessage($message['text']);
+            }
         }
     }
 
     /**
-     * Add exclusion warning messages
+     * @inheritDoc
+     */
+    public function buildMessagesForCoupon(string $couponCode): array
+    {
+        $messages = [];
+
+        if ($this->resultCollector->hasExcludedItems($couponCode)) {
+            $messages = array_merge($messages, $this->buildExclusionMessages($couponCode));
+        }
+
+        if ($this->resultCollector->hasBypassedItems($couponCode)) {
+            $messages = array_merge($messages, $this->buildBypassMessages($couponCode));
+        }
+
+        return $messages;
+    }
+
+    /**
+     * Build exclusion warning messages
      *
      * @param string $couponCode
+     *
+     * @return array<int, array{type: string, text: string}>
      */
-    private function addExclusionMessages(string $couponCode): void
+    private function buildExclusionMessages(string $couponCode): array
     {
         $excludedItems = $this->resultCollector->getExcludedItems($couponCode);
         $productNames = array_map(
@@ -46,29 +66,32 @@ class ExclusionMessageBuilder implements ExclusionMessageBuilderInterface
         );
 
         if (count($productNames) === 1) {
-            $message = __(
+            $text = (string) __(
                 'Coupon "%1" was not applied to "%2" because it is already discounted.',
                 $couponCode,
                 reset($productNames)
             );
         } else {
-            $message = __(
+            $text = (string) __(
                 'Coupon "%1" was not applied to the following products because they are already discounted: %2',
                 $couponCode,
                 implode(', ', $productNames)
             );
         }
 
-        $this->messageManager->addWarningMessage((string) $message);
+        return [['type' => 'warning', 'text' => $text]];
     }
 
     /**
-     * Add bypass-related messages (adjusted and existing_better)
+     * Build bypass-related messages (adjusted and existing_better)
      *
      * @param string $couponCode
+     *
+     * @return array<int, array{type: string, text: string}>
      */
-    private function addBypassMessages(string $couponCode): void
+    private function buildBypassMessages(string $couponCode): array
     {
+        $messages = [];
         $bypassedItems = $this->resultCollector->getBypassedItems($couponCode);
 
         foreach ($bypassedItems as $itemData) {
@@ -77,22 +100,23 @@ class ExclusionMessageBuilder implements ExclusionMessageBuilderInterface
             $params = $itemData['messageParams'];
             $simpleAction = $params['simpleAction'] ?? '';
 
-            $message = $this->buildBypassMessage($couponCode, $productName, $type, $simpleAction, $params);
+            $phrase = $this->buildBypassPhrase($couponCode, $productName, $type, $simpleAction, $params);
 
-            if ($message === null) {
+            if ($phrase === null) {
                 continue;
             }
 
-            if ($type === BypassResultType::ADJUSTED) {
-                $this->messageManager->addNoticeMessage((string) $message);
-            } else {
-                $this->messageManager->addWarningMessage((string) $message);
-            }
+            $messages[] = [
+                'type' => $type === BypassResultType::ADJUSTED ? 'notice' : 'warning',
+                'text' => (string) $phrase,
+            ];
         }
+
+        return $messages;
     }
 
     /**
-     * Build the appropriate bypass message based on type and action
+     * Build the appropriate bypass phrase based on type and action
      *
      * @param string                      $couponCode
      * @param string                      $productName
@@ -102,7 +126,7 @@ class ExclusionMessageBuilder implements ExclusionMessageBuilderInterface
      *
      * @return \Magento\Framework\Phrase|null
      */
-    private function buildBypassMessage(
+    private function buildBypassPhrase(
         string $couponCode,
         string $productName,
         BypassResultType $type,
