@@ -34,7 +34,9 @@
     }
   },
   "require-dev": {
-    "phpunit/phpunit": "^10.0"
+    "phpunit/phpunit": "^10.0",
+    "phpstan/phpstan": "^1.12",
+    "bitexpert/phpstan-magento": "^0.32"
   },
   "repositories": [
     {
