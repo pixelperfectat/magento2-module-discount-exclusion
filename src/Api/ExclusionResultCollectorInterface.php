@@ -3,6 +3,7 @@
 namespace PixelPerfect\DiscountExclusion\Api;
 
 use Magento\Quote\Model\Quote\Item\AbstractItem;
+use PixelPerfect\DiscountExclusion\Api\Data\BypassResultType;
 
 /**
  * Collects exclusion results during quote processing for later message display
@@ -41,6 +42,38 @@ interface ExclusionResultCollectorInterface
      * @return string[]
      */
     public function getCouponCodes(): array;
+
+    /**
+     * Add a bypassed item (max-discount logic applied) to the collector
+     *
+     * @param AbstractItem              $item
+     * @param BypassResultType          $type
+     * @param string                    $couponCode
+     * @param array<string, float|string> $messageParams Parameters for message rendering
+     */
+    public function addBypassedItem(
+        AbstractItem $item,
+        BypassResultType $type,
+        string $couponCode,
+        array $messageParams = [],
+    ): void;
+
+    /**
+     * Check if there are bypassed items for a coupon
+     */
+    public function hasBypassedItems(string $couponCode): bool;
+
+    /**
+     * Check if there are any bypassed items at all
+     */
+    public function hasAnyBypassedItems(): bool;
+
+    /**
+     * Get all bypassed items for a coupon code
+     *
+     * @return array<string, array{name: string, type: BypassResultType, messageParams: array<string, float|string>}>
+     */
+    public function getBypassedItems(string $couponCode): array;
 
     /**
      * Clear all collected results
