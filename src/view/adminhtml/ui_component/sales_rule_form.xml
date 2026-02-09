@@ -13,7 +13,7 @@
                 <dataType>boolean</dataType>
                 <label translate="true">Bypass Discount Exclusion</label>
                 <tooltip>
-                    <description translate="true">When enabled, this rule's discount will apply even to products already discounted by special prices or catalog rules.</description>
+                    <description translate="true">When enabled, this rule applies maximum discount logic: the customer receives whichever discount is greater (existing or this rule's), calculated from the regular price.</description>
                 </tooltip>
             </settings>
             <formElements>
