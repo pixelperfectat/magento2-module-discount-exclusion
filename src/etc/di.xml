@@ -9,6 +9,8 @@
                 type="PixelPerfect\DiscountExclusion\Service\Config"/>
     <preference for="PixelPerfect\DiscountExclusion\Api\ExclusionResultCollectorInterface"
                 type="PixelPerfect\DiscountExclusion\Service\ExclusionResultCollector"/>
+    <preference for="PixelPerfect\DiscountExclusion\Api\MaxDiscountCalculatorInterface"
+                type="PixelPerfect\DiscountExclusion\Service\MaxDiscountCalculator"/>
 
     <!-- Configure discount validator plugin -->
     <type name="Magento\SalesRule\Model\Validator">
@@ -21,7 +23,6 @@
     <type name="PixelPerfect\DiscountExclusion\Service\DiscountExclusionManager">
         <arguments>
             <argument name="strategyEligibilityGuards" xsi:type="array">
-                <item name="bypass_exclusion" xsi:type="object">PixelPerfect\DiscountExclusion\Model\StrategyEligibilityGuards\BypassExclusion</item>
                 <item name="coupon_only" xsi:type="object">PixelPerfect\DiscountExclusion\Model\StrategyEligibilityGuards\CouponOnly</item>
                 <item name="ampromo" xsi:type="object">PixelPerfect\DiscountExclusion\Model\StrategyEligibilityGuards\Ampromo</item>
                 <item name="zero_price" xsi:type="object">PixelPerfect\DiscountExclusion\Model\StrategyEligibilityGuards\ZeroPrice</item>
