@@ -9,4 +9,16 @@
     <event name="controller_action_postdispatch_checkout_cart_couponPost">
         <observer name="discount_exclusion_coupon_post" instance="PixelPerfect\DiscountExclusion\Observer\CouponPostObserver"/>
     </event>
+
+    <event name="controller_action_postdispatch_checkout_cart_add">
+        <observer name="discount_exclusion_cart_add" instance="PixelPerfect\DiscountExclusion\Observer\CartUpdateObserver"/>
+    </event>
+
+    <event name="controller_action_postdispatch_checkout_cart_updatePost">
+        <observer name="discount_exclusion_cart_update" instance="PixelPerfect\DiscountExclusion\Observer\CartUpdateObserver"/>
+    </event>
+
+    <event name="controller_action_postdispatch_checkout_cart_delete">
+        <observer name="discount_exclusion_cart_delete" instance="PixelPerfect\DiscountExclusion\Observer\CartUpdateObserver"/>
+    </event>
 </config>

@@ -11,6 +11,8 @@
                 type="PixelPerfect\DiscountExclusion\Service\ExclusionResultCollector"/>
     <preference for="PixelPerfect\DiscountExclusion\Api\MaxDiscountCalculatorInterface"
                 type="PixelPerfect\DiscountExclusion\Service\MaxDiscountCalculator"/>
+    <preference for="PixelPerfect\DiscountExclusion\Api\ExclusionMessageBuilderInterface"
+                type="PixelPerfect\DiscountExclusion\Service\ExclusionMessageBuilder"/>
 
     <!-- Configure discount validator plugin -->
     <type name="Magento\SalesRule\Model\Validator">
@@ -42,6 +44,11 @@
         </arguments>
     </type>
     <type name="PixelPerfect\DiscountExclusion\Observer\CouponPostObserver">
+        <arguments>
+            <argument name="checkoutSession" xsi:type="object">Magento\Checkout\Model\Session\Proxy</argument>
+        </arguments>
+    </type>
+    <type name="PixelPerfect\DiscountExclusion\Observer\CartUpdateObserver">
         <arguments>
             <argument name="checkoutSession" xsi:type="object">Magento\Checkout\Model\Session\Proxy</argument>
         </arguments>
