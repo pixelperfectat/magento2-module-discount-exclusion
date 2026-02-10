@@ -21,6 +21,12 @@
                 sortOrder="10"/>
     </type>
 
+    <!-- Configure sales rule form default -->
+    <type name="Magento\SalesRule\Model\Rule\DataProvider">
+        <plugin name="discount_exclusion_data_provider"
+                type="PixelPerfect\DiscountExclusion\Plugin\SalesRule\Model\ResourceModel\Rule\DataProviderPlugin"/>
+    </type>
+
     <!-- Configure strategies -->
     <type name="PixelPerfect\DiscountExclusion\Service\DiscountExclusionManager">
         <arguments>
