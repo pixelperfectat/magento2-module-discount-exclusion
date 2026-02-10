@@ -23,4 +23,9 @@ readonly class Config implements ConfigInterface
             $storeId
         );
     }
+
+    public function isBypassDefault(): bool
+    {
+        return $this->scopeConfig->isSetFlag(self::XML_PATH_BYPASS_DEFAULT);
+    }
 }

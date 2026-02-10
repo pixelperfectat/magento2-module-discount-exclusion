@@ -12,6 +12,11 @@
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <comment>Enable or disable the discount exclusion functionality</comment>
                 </field>
+                <field id="bypass_default" translate="label comment" type="select" sortOrder="20" showInDefault="1" showInWebsite="0" showInStore="0">
+                    <label>Bypass Default for New Rules</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <comment>Default value of the "Bypass Discount Exclusion" toggle when creating new cart price rules. Use the CLI command to apply this default to existing rules.</comment>
+                </field>
             </group>
         </section>
     </system>
