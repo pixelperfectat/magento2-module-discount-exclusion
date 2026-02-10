@@ -11,3 +11,5 @@
 "Coupon ""%1"" applied an additional %2 discount to ""%3"", adjusted from %4 because it is already discounted by %5.","Il coupon ""%1"" ha applicato uno sconto aggiuntivo di %2 a ""%3"", ridotto da %4 perché è già scontato di %5."
 "Coupon ""%1"" was not applied to ""%2"" because the existing %3% discount already exceeds the coupon's %4% discount.","Il coupon ""%1"" non è stato applicato a ""%2"" perché lo sconto esistente del %3% supera già lo sconto del coupon del %4%."
 "Coupon ""%1"" was not applied to ""%2"" because the existing %3 discount already exceeds the coupon's %4 discount.","Il coupon ""%1"" non è stato applicato a ""%2"" perché lo sconto esistente di %3 supera già lo sconto del coupon di %4."
+"Bypass Default for New Rules","Bypass predefinito per nuove regole"
+"Default value of the ""Bypass Discount Exclusion"" toggle when creating new cart price rules. Use the CLI command to apply this default to existing rules.","Valore predefinito dell'opzione ""Ignora Esclusione Sconto"" durante la creazione di nuove regole di prezzo del carrello. Utilizzare il comando CLI per applicare questo valore predefinito alle regole esistenti."
