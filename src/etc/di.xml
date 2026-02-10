@@ -43,6 +43,15 @@
         </arguments>
     </type>
 
+    <!-- CLI commands -->
+    <type name="Magento\Framework\Console\CommandList">
+        <arguments>
+            <argument name="commands" xsi:type="array">
+                <item name="discount_exclusion_sync_bypass" xsi:type="object">PixelPerfect\DiscountExclusion\Console\Command\SyncBypassDefaultCommand</item>
+            </argument>
+        </arguments>
+    </type>
+
     <!-- Proxies -->
     <type name="PixelPerfect\DiscountExclusion\Service\MessageProcessor">
         <arguments>
