@@ -43,6 +43,16 @@
         </arguments>
     </type>
 
+    <!-- REST API converter plugins -->
+    <type name="Magento\SalesRule\Model\Converter\ToDataModel">
+        <plugin name="discount_exclusion_to_data_model"
+                type="PixelPerfect\DiscountExclusion\Plugin\SalesRule\Model\Converter\ToDataModelPlugin"/>
+    </type>
+    <type name="Magento\SalesRule\Model\Converter\ToModel">
+        <plugin name="discount_exclusion_to_model"
+                type="PixelPerfect\DiscountExclusion\Plugin\SalesRule\Model\Converter\ToModelPlugin"/>
+    </type>
+
     <!-- CLI commands -->
     <type name="Magento\Framework\Console\CommandList">
         <arguments>
