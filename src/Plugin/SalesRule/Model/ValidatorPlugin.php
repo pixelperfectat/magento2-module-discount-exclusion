@@ -162,6 +162,10 @@ class ValidatorPlugin
             'rule_id' => $rule->getId(),
         ]);
 
+        $item->setData('pp_discount_excluded', true);
+        $item->setData('pp_discount_exclusion_reason', 'existing_better');
+        $item->setData('pp_discount_exclusion_params', $this->buildMessageParams($rule, $bypassResult));
+
         if ($couponCode !== null && $couponCode !== '') {
             $this->resultCollector->addBypassedItem(
                 $item,
@@ -216,6 +220,9 @@ class ValidatorPlugin
             ]);
         }
 
+        $item->setData('pp_discount_bypass_adjusted', true);
+        $item->setData('pp_discount_exclusion_params', $this->buildMessageParams($rule, $bypassResult));
+
         if ($couponCode !== null && $couponCode !== '') {
             $this->resultCollector->addBypassedItem(
                 $item,
@@ -261,6 +268,9 @@ class ValidatorPlugin
                 'rule_id' => $rule->getId(),
                 'coupon_code' => $couponCode,
             ]);
+
+            $item->setData('pp_discount_excluded', true);
+            $item->setData('pp_discount_exclusion_reason', 'standard');
 
             if ($couponCode !== null && $couponCode !== '') {
                 $this->resultCollector->addExcludedItem(

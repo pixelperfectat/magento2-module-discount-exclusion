@@ -152,6 +152,8 @@ class ValidatorPluginTest extends TestCase
 
         $this->assertFalse($proceeded, 'Proceed should NOT be called when product is excluded');
         $this->assertSame($this->validator, $result);
+        $this->assertTrue($this->item->getData('pp_discount_excluded'));
+        $this->assertSame('standard', $this->item->getData('pp_discount_exclusion_reason'));
     }
 
     public function testProductNotExcludedAllowsDiscount(): void
@@ -405,6 +407,11 @@ class ValidatorPluginTest extends TestCase
         $this->plugin->aroundProcess($this->validator, $proceed, $this->item, $this->rule);
 
         $this->assertTrue($proceeded, 'Proceed should be called for adjusted bypass');
+        $this->assertTrue($this->item->getData('pp_discount_bypass_adjusted'));
+        $params = $this->item->getData('pp_discount_exclusion_params');
+        $this->assertIsArray($params);
+        $this->assertSame(30.0, $params['ruleDiscountPercent']);
+        $this->assertSame(25.0, $params['existingDiscountPercent']);
     }
 
     public function testBypassExistingBetterBlocksDiscount(): void
@@ -440,6 +447,12 @@ class ValidatorPluginTest extends TestCase
         $this->plugin->aroundProcess($this->validator, $proceed, $this->item, $this->rule);
 
         $this->assertFalse($proceeded, 'Proceed should NOT be called when existing discount is better');
+        $this->assertTrue($this->item->getData('pp_discount_excluded'));
+        $this->assertSame('existing_better', $this->item->getData('pp_discount_exclusion_reason'));
+        $params = $this->item->getData('pp_discount_exclusion_params');
+        $this->assertIsArray($params);
+        $this->assertSame(20.0, $params['ruleDiscountPercent']);
+        $this->assertSame(25.0, $params['existingDiscountPercent']);
     }
 
     public function testBypassStackingFallbackCallsProceed(): void
