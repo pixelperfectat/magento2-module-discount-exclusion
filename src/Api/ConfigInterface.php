@@ -7,6 +7,7 @@ namespace PixelPerfect\DiscountExclusion\Api;
 interface ConfigInterface
 {
     public const XML_PATH_ENABLED = 'discount_exclusion/general/enabled';
+    public const XML_PATH_SHOW_MESSAGES = 'discount_exclusion/general/show_messages';
     public const XML_PATH_BYPASS_DEFAULT = 'discount_exclusion/general/bypass_default';
 
     /**
@@ -16,6 +17,14 @@ interface ConfigInterface
      * @return bool
      */
     public function isEnabled(?int $storeId = null): bool;
+
+    /**
+     * Check if customer-facing discount exclusion messages are enabled
+     *
+     * @param int|null $storeId
+     * @return bool
+     */
+    public function isMessagesEnabled(?int $storeId = null): bool;
 
     /**
      * Get the default value for the bypass discount exclusion toggle on new rules

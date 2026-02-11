@@ -24,6 +24,15 @@ readonly class Config implements ConfigInterface
         );
     }
 
+    public function isMessagesEnabled(?int $storeId = null): bool
+    {
+        return $this->scopeConfig->isSetFlag(
+            self::XML_PATH_SHOW_MESSAGES,
+            ScopeInterface::SCOPE_STORE,
+            $storeId
+        );
+    }
+
     public function isBypassDefault(): bool
     {
         return $this->scopeConfig->isSetFlag(self::XML_PATH_BYPASS_DEFAULT);

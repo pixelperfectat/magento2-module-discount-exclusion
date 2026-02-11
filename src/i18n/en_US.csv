@@ -11,5 +11,7 @@
 "Coupon ""%1"" applied an additional %2 discount to ""%3"", adjusted from %4 because it is already discounted by %5.","Coupon ""%1"" applied an additional %2 discount to ""%3"", adjusted from %4 because it is already discounted by %5."
 "Coupon ""%1"" was not applied to ""%2"" because the existing %3% discount already exceeds the coupon's %4% discount.","Coupon ""%1"" was not applied to ""%2"" because the existing %3% discount already exceeds the coupon's %4% discount."
 "Coupon ""%1"" was not applied to ""%2"" because the existing %3 discount already exceeds the coupon's %4 discount.","Coupon ""%1"" was not applied to ""%2"" because the existing %3 discount already exceeds the coupon's %4 discount."
+"Show Customer Messages","Show Customer Messages"
+"Show flash messages and per-item messages explaining why a coupon was not applied or was adjusted.","Show flash messages and per-item messages explaining why a coupon was not applied or was adjusted."
 "Bypass Default for New Rules","Bypass Default for New Rules"
 "Default value of the ""Bypass Discount Exclusion"" toggle when creating new cart price rules. Use the CLI command to apply this default to existing rules.","Default value of the ""Bypass Discount Exclusion"" toggle when creating new cart price rules. Use the CLI command to apply this default to existing rules."

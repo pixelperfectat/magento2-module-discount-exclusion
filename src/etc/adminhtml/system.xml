@@ -12,6 +12,11 @@
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <comment>Enable or disable the discount exclusion functionality</comment>
                 </field>
+                <field id="show_messages" translate="label comment" type="select" sortOrder="15" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Show Customer Messages</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <comment>Show flash messages and per-item messages explaining why a coupon was not applied or was adjusted.</comment>
+                </field>
                 <field id="bypass_default" translate="label comment" type="select" sortOrder="20" showInDefault="1" showInWebsite="0" showInStore="0">
                     <label>Bypass Default for New Rules</label>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
