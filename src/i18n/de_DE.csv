@@ -11,5 +11,7 @@
 "Coupon ""%1"" applied an additional %2 discount to ""%3"", adjusted from %4 because it is already discounted by %5.","Gutschein ""%1"" hat einen zusätzlichen Rabatt von %2 auf ""%3"" angewendet, angepasst von %4, da das Produkt bereits um %5 reduziert ist."
 "Coupon ""%1"" was not applied to ""%2"" because the existing %3% discount already exceeds the coupon's %4% discount.","Gutschein ""%1"" wurde nicht auf ""%2"" angewendet, da der bestehende Rabatt von %3% den Gutscheinrabatt von %4% bereits übersteigt."
 "Coupon ""%1"" was not applied to ""%2"" because the existing %3 discount already exceeds the coupon's %4 discount.","Gutschein ""%1"" wurde nicht auf ""%2"" angewendet, da der bestehende Rabatt von %3 den Gutscheinrabatt von %4 bereits übersteigt."
+"Show Customer Messages","Kundenmeldungen anzeigen"
+"Show flash messages and per-item messages explaining why a coupon was not applied or was adjusted.","Zeigt Flash-Meldungen und Artikelmeldungen, die erklären, warum ein Gutschein nicht angewendet oder angepasst wurde."
 "Bypass Default for New Rules","Standard-Bypass für neue Regeln"
 "Default value of the ""Bypass Discount Exclusion"" toggle when creating new cart price rules. Use the CLI command to apply this default to existing rules.","Standardwert des Schalters ""Rabattausschluss umgehen"" beim Erstellen neuer Warenkorbpreisregeln. Verwenden Sie den CLI-Befehl, um diesen Standard auf bestehende Regeln anzuwenden."

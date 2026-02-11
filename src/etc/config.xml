@@ -4,6 +4,7 @@
         <discount_exclusion>
             <general>
                 <enabled>1</enabled>
+                <show_messages>1</show_messages>
                 <bypass_default>0</bypass_default>
             </general>
         </discount_exclusion>

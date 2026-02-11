@@ -5,6 +5,7 @@ namespace PixelPerfect\DiscountExclusion\Service;
 use Magento\Framework\Message\ManagerInterface;
 use Magento\Framework\Pricing\PriceCurrencyInterface;
 use Magento\SalesRule\Model\Rule;
+use PixelPerfect\DiscountExclusion\Api\ConfigInterface;
 use PixelPerfect\DiscountExclusion\Api\Data\BypassResultType;
 use PixelPerfect\DiscountExclusion\Api\ExclusionMessageBuilderInterface;
 use PixelPerfect\DiscountExclusion\Api\ExclusionResultCollectorInterface;
@@ -15,6 +16,7 @@ class ExclusionMessageBuilder implements ExclusionMessageBuilderInterface
         private readonly ExclusionResultCollectorInterface $resultCollector,
         private readonly ManagerInterface $messageManager,
         private readonly PriceCurrencyInterface $priceCurrency,
+        private readonly ConfigInterface $config,
     ) {
     }
 
@@ -23,6 +25,10 @@ class ExclusionMessageBuilder implements ExclusionMessageBuilderInterface
      */
     public function addMessagesForCoupon(string $couponCode): void
     {
+        if (!$this->config->isMessagesEnabled()) {
+            return;
+        }
+
         foreach ($this->buildMessagesForCoupon($couponCode) as $message) {
             if ($message['type'] === 'notice') {
                 $this->messageManager->addNoticeMessage($message['text']);
@@ -37,6 +43,10 @@ class ExclusionMessageBuilder implements ExclusionMessageBuilderInterface
      */
     public function buildMessagesForCoupon(string $couponCode): array
     {
+        if (!$this->config->isMessagesEnabled()) {
+            return [];
+        }
+
         $messages = [];
 
         if ($this->resultCollector->hasExcludedItems($couponCode)) {

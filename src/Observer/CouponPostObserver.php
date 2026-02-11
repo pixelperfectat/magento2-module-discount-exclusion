@@ -9,6 +9,7 @@ use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Framework\Message\ManagerInterface;
 use Magento\Quote\Api\CartRepositoryInterface;
+use PixelPerfect\DiscountExclusion\Api\ConfigInterface;
 use PixelPerfect\DiscountExclusion\Api\Data\BypassResultType;
 use PixelPerfect\DiscountExclusion\Api\ExclusionMessageBuilderInterface;
 use PixelPerfect\DiscountExclusion\Api\ExclusionResultCollectorInterface;
@@ -23,7 +24,8 @@ class CouponPostObserver implements ObserverInterface
         private readonly RequestInterface $request,
         private readonly CheckoutSession $checkoutSession,
         private readonly CartRepositoryInterface $quoteRepository,
-        private readonly LoggerInterface $logger
+        private readonly LoggerInterface $logger,
+        private readonly ConfigInterface $config,
     ) {
     }
 
@@ -75,10 +77,12 @@ class CouponPostObserver implements ObserverInterface
             $this->quoteRepository->save($quote);
         }
 
-        // Clear ALL existing messages (including Magento's generic messages)
-        $this->messageManager->getMessages(true);
+        if ($this->config->isMessagesEnabled()) {
+            // Clear Magento's generic messages only when we replace them with our own
+            $this->messageManager->getMessages(true);
+            $this->messageBuilder->addMessagesForCoupon($couponCode);
+        }
 
-        $this->messageBuilder->addMessagesForCoupon($couponCode);
         $this->resultCollector->clear();
     }
 

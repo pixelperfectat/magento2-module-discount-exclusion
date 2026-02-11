@@ -11,5 +11,7 @@
 "Coupon ""%1"" applied an additional %2 discount to ""%3"", adjusted from %4 because it is already discounted by %5.","Le coupon ""%1"" a appliqué une remise supplémentaire de %2 sur ""%3"", ajustée de %4 car le produit est déjà remisé de %5."
 "Coupon ""%1"" was not applied to ""%2"" because the existing %3% discount already exceeds the coupon's %4% discount.","Le coupon ""%1"" n'a pas été appliqué à ""%2"" car la remise existante de %3% dépasse déjà la remise du coupon de %4%."
 "Coupon ""%1"" was not applied to ""%2"" because the existing %3 discount already exceeds the coupon's %4 discount.","Le coupon ""%1"" n'a pas été appliqué à ""%2"" car la remise existante de %3 dépasse déjà la remise du coupon de %4."
+"Show Customer Messages","Afficher les messages client"
+"Show flash messages and per-item messages explaining why a coupon was not applied or was adjusted.","Afficher les messages flash et les messages par article expliquant pourquoi un coupon n'a pas été appliqué ou a été ajusté."
 "Bypass Default for New Rules","Bypass par défaut pour les nouvelles règles"
 "Default value of the ""Bypass Discount Exclusion"" toggle when creating new cart price rules. Use the CLI command to apply this default to existing rules.","Valeur par défaut de l'option ""Contourner l'Exclusion de Remise"" lors de la création de nouvelles règles de prix du panier. Utilisez la commande CLI pour appliquer cette valeur par défaut aux règles existantes."
