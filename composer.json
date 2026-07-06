@@ -15,7 +15,7 @@
         "issues": "https://github.com/pixelperfectat/magento2-module-discount-exclusion/issues"
     },
     "require": {
-        "php": "^8.2",
+        "php": "^8.3",
         "magento/framework": "^103.0",
         "magento/module-catalog": "^104.0",
         "magento/module-sales-rule": "^101.0"
