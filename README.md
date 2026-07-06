@@ -2,7 +2,7 @@
 
 Extensible Magento 2 module that prevents applying shopping cart (sales rule) discounts to products already discounted by other mechanisms.
 
-Status: Active development. APIs and behavior may change without backward compatibility.
+Status: Stable. Follows [semantic versioning](https://semver.org/) from 1.0.0.
 
 ## What it does
 
@@ -531,7 +531,7 @@ Test/
 ## Requirements
 
 - Magento 2.4.x or higher
-- PHP 8.2+
+- PHP 8.3+
 
 ## Installation
 
@@ -593,10 +593,8 @@ The module logs to `var/log/debug.log` with the `DiscountExclusion:` prefix. Key
 
 ## License
 
-See LICENSE.md for license details.
+[MIT](LICENSE)
 
 ## Support
-
-This module is under active development. APIs and behavior may change without backward compatibility guarantees until version 1.0.0.
 
 For issues, feature requests, or questions, please [open an issue](https://github.com/pixelperfectat/magento2-module-discount-exclusion/issues).
