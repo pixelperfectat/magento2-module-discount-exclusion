@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-07-09
+
+### Fixed
+
+- Bypass cap no longer applies a phantom one-cent discount when a coupon's percentage equals an existing catalog price rule of the same percentage. The `ADJUSTED`/`EXISTING_BETTER` decision used a `0.001` epsilon — finer than the smallest representable currency unit — so a catalog rule's cent-rounded final price (e.g. `22.425` → `22.43`) left a sub-cent residue that was misclassified as an adjustment and rounded up to a visible `0.01`. The classification now requires at least one representable cent of additional discount across the line (#8).
+
 ## [1.0.1] - 2026-07-09
 
 ### Fixed
@@ -50,6 +56,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Translations for en_US, de_DE, it_IT, fr_FR, es_ES
 - Unit tests for all core components
 
-[Unreleased]: https://github.com/pixelperfectat/magento2-module-discount-exclusion/compare/0.2.0...HEAD
+[Unreleased]: https://github.com/pixelperfectat/magento2-module-discount-exclusion/compare/1.0.2...HEAD
+[1.0.2]: https://github.com/pixelperfectat/magento2-module-discount-exclusion/compare/1.0.1...1.0.2
+[1.0.1]: https://github.com/pixelperfectat/magento2-module-discount-exclusion/compare/0.2.0...1.0.1
 [0.2.0]: https://github.com/pixelperfectat/magento2-module-discount-exclusion/compare/0.1.0...0.2.0
 [0.1.0]: https://github.com/pixelperfectat/magento2-module-discount-exclusion/releases/tag/0.1.0
