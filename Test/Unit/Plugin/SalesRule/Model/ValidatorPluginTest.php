@@ -60,7 +60,7 @@ class ValidatorPluginTest extends TestCase
             false,
             true,
             true,
-            ['getStoreId', 'getProduct', 'getQuote', 'getChildren', 'getParentItem', 'getQty', 'getDiscountAmount', 'setDiscountAmount']
+            ['getStoreId', 'getProduct', 'getQuote', 'getChildren', 'getParentItem', 'getQty', 'getDiscountAmount', 'setDiscountAmount', 'getBaseDiscountAmount', 'setBaseDiscountAmount']
         );
         $this->item->method('getStoreId')->willReturn(1);
         $this->item->method('getProduct')->willReturn($this->product);
@@ -412,6 +412,45 @@ class ValidatorPluginTest extends TestCase
         $this->assertIsArray($params);
         $this->assertSame(30.0, $params['ruleDiscountPercent']);
         $this->assertSame(25.0, $params['existingDiscountPercent']);
+    }
+
+    public function testBypassAdjustedCapsBaseDiscountAmount(): void
+    {
+        $this->config->method('isEnabled')->willReturn(true);
+        $this->item->method('getParentItem')->willReturn(null);
+        $this->quote->method('getCouponCode')->willReturn('BYPASS30');
+        $this->rule->method('getData')->with('bypass_discount_exclusion')->willReturn(1);
+        $this->discountExclusionManager->method('shouldExcludeFromDiscount')->willReturn(true);
+
+        $bypassResult = new BypassResult(
+            type: BypassResultType::ADJUSTED,
+            additionalDiscount: 5.0,
+            maxAllowedTotal: 5.0,
+            regularPrice: 100.0,
+            currentPrice: 75.0,
+            existingDiscountAmount: 25.0,
+            ruleDiscountFromRegular: 30.0,
+            existingDiscountPercent: 25.0,
+            ruleDiscountPercent: 30.0,
+            qty: 1.0,
+        );
+        $this->maxDiscountCalculator->method('calculate')->willReturn($bypassResult);
+
+        $discountSequence = [0.0];
+        $this->item->method('getDiscountAmount')
+            ->willReturnCallback(function () use (&$discountSequence) {
+                return array_shift($discountSequence) ?? 22.50;
+            });
+        $this->item->method('getBaseDiscountAmount')->willReturn(1.0);
+
+        $this->item->expects($this->once())->method('setDiscountAmount')->with(5.0);
+        $this->item->expects($this->once())->method('setBaseDiscountAmount')->with(6.0);
+
+        $proceed = function ($item, $rule) {
+            return $this->validator;
+        };
+
+        $this->plugin->aroundProcess($this->validator, $proceed, $this->item, $this->rule);
     }
 
     public function testBypassExistingBetterBlocksDiscount(): void
