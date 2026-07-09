@@ -16,6 +16,8 @@ class MaxDiscountCalculator implements MaxDiscountCalculatorInterface
 {
     private const EPSILON = 0.001;
 
+    private const MIN_CURRENCY_UNIT = 0.01;
+
     /**
      * @inheritDoc
      */
@@ -60,18 +62,16 @@ class MaxDiscountCalculator implements MaxDiscountCalculatorInterface
 
         $additionalDiscount = max(0.0, $ruleDiscountFromRegular - $existingDiscount);
 
-        $type = $additionalDiscount > self::EPSILON
-            ? BypassResultType::ADJUSTED
-            : BypassResultType::EXISTING_BETTER;
+        $isAdjusted = ($additionalDiscount * $qty) >= self::MIN_CURRENCY_UNIT - self::EPSILON;
 
         return $this->buildResult(
-            $type,
+            $isAdjusted ? BypassResultType::ADJUSTED : BypassResultType::EXISTING_BETTER,
             regularPrice: $regularPrice,
             currentPrice: $currentPrice,
             existingDiscount: $existingDiscount,
             ruleDiscountFromRegular: $ruleDiscountFromRegular,
             qty: $qty,
-            additionalDiscount: $additionalDiscount,
+            additionalDiscount: $isAdjusted ? $additionalDiscount : 0.0,
         );
     }
 
