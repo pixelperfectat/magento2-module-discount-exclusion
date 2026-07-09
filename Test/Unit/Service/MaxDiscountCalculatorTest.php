@@ -90,6 +90,16 @@ class MaxDiscountCalculatorTest extends TestCase
                 0.0,
                 '25% rule on 25% discounted product → existing better (equal = no additional)',
             ],
+            'by_percent_rule_25_on_cent_rounded_25_off_no_phantom_penny' => [
+                29.90,              // regularPrice
+                22.43,              // finalPrice: 25% off (22.425) cent-rounded up
+                Rule::BY_PERCENT_ACTION,
+                25.0,               // discountAmount (25%)
+                1.0,                // qty
+                BypassResultType::EXISTING_BETTER,
+                0.0,                // sub-cent residue is rounding noise, not a real discount
+                'Rule % equals a cent-rounded catalog-rule discount → existing better, no phantom penny (#8)',
+            ],
             'by_fixed_rule_10_on_product_discounted_7_50' => [
                 100.0,
                 92.50,
