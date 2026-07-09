@@ -206,6 +206,7 @@ class ValidatorPlugin
     ): Validator {
         // Record discount before proceed
         $discountBefore = (float) $item->getDiscountAmount();
+        $baseDiscountBefore = (float) $item->getBaseDiscountAmount();
 
         // Let Magento calculate the discount
         $result = $proceed($item, $rule);
@@ -216,7 +217,9 @@ class ValidatorPlugin
 
         if ($ruleDiscount > $bypassResult->maxAllowedTotal + 0.001) {
             $cappedDiscount = $discountBefore + $bypassResult->maxAllowedTotal;
+            $cappedBaseDiscount = $baseDiscountBefore + $bypassResult->maxAllowedTotal;
             $item->setDiscountAmount($cappedDiscount);
+            $item->setBaseDiscountAmount($cappedBaseDiscount);
 
             $this->logger->info('DiscountExclusion: Capped bypass discount', [
                 'product_sku' => $this->getActualProduct($item)->getSku(),

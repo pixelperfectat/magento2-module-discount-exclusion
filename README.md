@@ -53,6 +53,8 @@ ValidatorPlugin::aroundProcess()
 - **Without bypass**: Coupon blocked entirely (product already discounted).
 - **With bypass**: `max(25%, 30%) = 30%` → target price 70 → additional discount of 5 applied → customer pays 70.
 
+> **Limitation (single currency):** the max-discount cap assumes the store currency equals the base currency. `MaxDiscountCalculator` derives `maxAllowedTotal` from the product's base prices, so on a store whose display currency differs from the base currency the display and base discount amounts can diverge. Multi-currency support is tracked in [#6](https://github.com/pixelperfectat/magento2-module-discount-exclusion/issues/6).
+
 ## Core Components
 
 ### 1. Strategy Eligibility Guards
