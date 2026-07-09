@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-07-09
+
+### Fixed
+
+- Bypass discount cap now also updates `base_discount_amount`. Previously `handleBypassAdjusted()` capped only `discount_amount`, leaving the base discount at its full uncapped value — this made `base_grand_total` diverge from `grand_total` on single-currency stores and caused downstream consumers reading the base amount (e.g. payment integrations settling on `base_grand_total`) to charge the wrong amount (#5).
+
 ## [0.2.0] - 2026-02-09
 
 ### Added
