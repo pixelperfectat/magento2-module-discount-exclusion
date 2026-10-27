@@ -79,7 +79,11 @@ interface ExclusionResultCollectorInterface
     /**
      * Get all bypassed items for a coupon code
      *
-     * @return array<int|string, array{name: string, type: BypassResultType, messageParams: array<string, float|string>}>
+     * @return array<int|string, array{
+     *     name: string,
+     *     type: BypassResultType,
+     *     messageParams: array<string, float|string>
+     * }>
      */
     public function getBypassedItems(string $couponCode): array;
 
