@@ -7,11 +7,6 @@
     <exclude-pattern>*/Test/*</exclude-pattern>
     <exclude-pattern>*/vendor/*</exclude-pattern>
     <exclude-pattern>*/docs/*</exclude-pattern>
-    <exclude-pattern>*/view/*</exclude-pattern>
 
-    <rule ref="PixelPerfect">
-        <!-- Module targets PHP 8.2+; readonly classes are valid. Magento2 standard
-             sets testVersion="8.1-8.2" globally and cannot be overridden from here. -->
-        <exclude name="PHPCompatibility.Classes.NewReadonlyClasses"/>
-    </rule>
+    <rule ref="PixelPerfect"/>
 </ruleset>
