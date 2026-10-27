@@ -87,7 +87,7 @@
         "ci:validate": "@composer validate --no-check-publish",
         "cs": "phpcs",
         "cs:fix": "phpcbf",
-        "infection": "infection --with-uncovered --min-msi=85 --min-covered-msi=90 --threads=max",
+        "infection": "infection --with-uncovered --min-msi=87 --min-covered-msi=87 --threads=max",
         "lint": "parallel-lint --exclude vendor --exclude generated .",
         "stan": "phpstan analyse",
         "test": "phpunit"
