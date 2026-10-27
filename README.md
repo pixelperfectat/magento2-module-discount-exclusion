@@ -12,9 +12,10 @@ Status: Stable. Follows [semantic versioning](https://semver.org/) from 1.0.0.
   - If exclusion strategies should run (Strategy Eligibility Guards).
   - Which exclusion strategies apply to a product.
 - **Per-rule bypass toggle** with max-discount logic: when enabled on a rule, the customer receives `max(existing discount, rule discount)` calculated from the regular price, instead of stacking discounts.
-- Displays user-friendly messages explaining why coupons weren't applied or were adjusted for specific products.
+- Displays user-friendly messages explaining why coupons weren't applied or were adjusted for specific products (can be turned off with **Show Customer Messages**).
 - Queues messages in the session and displays them only on the cart page for a cleaner UX.
-- Automatically removes coupon from cart when no actual discount was applied.
+- Removes the coupon from the cart when it was applied through the cart page coupon form (`checkout/cart/couponPost`) and no actual discount resulted. See [Known limitations](#known-limitations).
+- Exposes the per-rule bypass toggle as a REST extension attribute and ships a CLI command to apply the configured default to existing rules.
 
 ## Architecture Overview
 
@@ -33,6 +34,7 @@ This module uses an **Around Plugin** on `Magento\SalesRule\Model\Validator::pro
    - **Bypass flow**: `MaxDiscountCalculator` computes the result. The discount may be adjusted (capped to the difference), blocked (existing is better), or allowed fully (stacking fallback for unsupported rule types).
 8. **Result Collection**: Excluded and bypassed items are collected by `ExclusionResultCollector` during processing.
 9. **User Feedback**: Messages are queued in the session and displayed on the cart page via `CartPageLoadObserver`. On coupon apply, `CouponPostObserver` displays messages immediately.
+10. **Item markers**: The plugin also records its decision on the quote item as data (`pp_discount_excluded`, `pp_discount_exclusion_reason` = `standard` or `existing_better`, `pp_discount_bypass_adjusted`, `pp_discount_exclusion_params`) for other code to read. They are not persisted.
 
 ### Bypass Flow (Max-Discount Logic)
 
@@ -53,7 +55,7 @@ ValidatorPlugin::aroundProcess()
 - **Without bypass**: Coupon blocked entirely (product already discounted).
 - **With bypass**: `max(25%, 30%) = 30%` → target price 70 → additional discount of 5 applied → customer pays 70.
 
-> **Limitation (single currency):** the max-discount cap assumes the store currency equals the base currency. `MaxDiscountCalculator` derives `maxAllowedTotal` from the product's base prices, so on a store whose display currency differs from the base currency the display and base discount amounts can diverge. Multi-currency support is tracked in [#6](https://github.com/pixelperfectat/magento2-module-discount-exclusion/issues/6).
+The cap is kept at four decimals (for example `0.9985`) and is not rounded to the currency's precision by the module; see [Known limitations](#known-limitations) for the multi-currency case.
 
 ## Core Components
 
@@ -210,14 +212,14 @@ interface ExclusionResultCollectorInterface
     // Exclusion tracking
     public function addExcludedItem(AbstractItem $item, string $reason, string $couponCode): void;
     public function hasExcludedItems(string $couponCode): bool;
-    public function hasAnyExcludedItems(): bool;
+    public function hasAnyExcludedItems(): bool; // deprecated, removal in 2.0.0
     public function getExcludedItems(string $couponCode): array;
-    public function getCouponCodes(): array;
+    public function getCouponCodes(): array;     // deprecated, removal in 2.0.0
 
     // Bypass tracking
     public function addBypassedItem(AbstractItem $item, BypassResultType $type, string $couponCode, array $messageParams = []): void;
     public function hasBypassedItems(string $couponCode): bool;
-    public function hasAnyBypassedItems(): bool;
+    public function hasAnyBypassedItems(): bool; // deprecated, removal in 2.0.0
     public function getBypassedItems(string $couponCode): array;
 
     public function clear(): void;
@@ -256,20 +258,22 @@ interface ExclusionMessageBuilderInterface
 ### 6. Observers
 
 **CouponPostObserver**: Handles message display and coupon cleanup after coupon application
-- Listens to `controller_action_postdispatch_checkout_cart_couponPost`
-- Displays consolidated messages for all excluded and bypassed products
-- Removes coupon from quote if no actual discount was applied
-- Clears Magento's generic error messages and replaces with specific exclusion messages
+- Listens to `controller_action_postdispatch_checkout_cart_couponPost` (frontend area only)
+- Removes the coupon from the quote when at least one item was excluded or bypassed for it, the shipping address discount is below 0.01, and no bypassed item was adjusted
+- When **Show Customer Messages** is on, clears the messages already queued in the message manager (including Magento's generic coupon message) and adds the specific exclusion messages
 
 **CartUpdateObserver**: Queues messages for display on the cart page
 - Listens to cart add, update, and delete post-dispatch events
 - Builds messages via `ExclusionMessageBuilder` and stores them in the checkout session
 - Messages are only displayed when the cart page loads (not on PLP/PDP)
 
-**CartPageLoadObserver**: Displays queued messages and clears session state on cart page load
+**CartPageLoadObserver**: Displays queued messages on cart page load
 - Listens to `controller_action_predispatch_checkout_cart_index`
 - Reads queued messages from session and displays them
-- Clears processed product IDs from session
+
+**CollectTotalsMessageQueueObserver**: Queues messages during GraphQL requests
+- Listens to `sales_quote_collect_totals_after` in the `graphql` area only
+- GraphQL mutations do not dispatch controller events, so this observer builds the messages and queues them in the checkout session, where `CartPageLoadObserver` shows them on the next cart page load. GraphQL responses do not contain the messages.
 
 ## Extending the Module
 
@@ -389,14 +393,13 @@ class TierPriceStrategy implements DiscountExclusionStrategyInterface
 
 ### Admin Configuration
 
-Navigate to `Stores > Configuration > Sales > Discount Exclusion` to access module settings.
+Navigate to `Stores > Configuration > Sales > Discount Exclusion > General`. Access is controlled by the ACL resource `PixelPerfect_DiscountExclusion::config`.
 
-| Setting | Scope | Default | Description |
-|---------|-------|---------|-------------|
-| Enable Module | Store View | Yes | Enables or disables the discount exclusion functionality |
-
-**Config Path**: `discount_exclusion/general/enabled`
-**ACL Permission**: `PixelPerfect_DiscountExclusion::config`
+| Setting | Config path | Scope | Default | Description |
+|---------|-------------|-------|---------|-------------|
+| Enable Module | `discount_exclusion/general/enabled` | Default, Website, Store View | Yes | Turns the exclusion and bypass logic on or off. Read per store of the quote item. |
+| Show Customer Messages | `discount_exclusion/general/show_messages` | Default, Website, Store View | Yes | Shows the flash messages that explain why a coupon was not applied or was adjusted. When off, Magento's own coupon messages are left as they are. |
+| Bypass Default for New Rules | `discount_exclusion/general/bypass_default` | Default only | No | Default state of the **Bypass Discount Exclusion** toggle when a new cart price rule is created in the admin. It does not change existing rules; use the CLI command below for that. |
 
 ### Per-Rule Bypass Toggle
 
@@ -408,7 +411,46 @@ When enabled, the rule uses maximum discount logic instead of being blocked:
 - Supported for `by_percent` and `by_fixed` rule types
 - `cart_fixed` and `buy_x_get_y` rules fall back to full stacking
 
-The toggle is stored as the `bypass_discount_exclusion` column on the `salesrule` table.
+The toggle is stored as the `bypass_discount_exclusion` column (`smallint`, default `0`) on the `salesrule` table.
+
+### REST API
+
+The toggle is available as the extension attribute `bypass_discount_exclusion` (boolean) on `Magento\SalesRule\Api\Data\RuleInterface`, so the standard sales rule endpoints read and write it:
+
+```json
+PUT /V1/salesRules/{ruleId}
+{
+  "rule": {
+    "extension_attributes": {
+      "bypass_discount_exclusion": true
+    }
+  }
+}
+```
+
+### CLI
+
+```bash
+# Show how many cart price rules differ from the configured "Bypass Default for New Rules"
+bin/magento discount-exclusion:sync-bypass-default --dry-run
+
+# Set bypass_discount_exclusion on every cart price rule to the configured default
+bin/magento discount-exclusion:sync-bypass-default
+```
+
+The command updates the `bypass_discount_exclusion` column of every row in the `salesrule` table directly, without loading the rule models.
+
+## Known limitations
+
+These are known and tracked; they are not fixed in the current release.
+
+- **Base vs. store currency** ([#6](https://github.com/pixelperfectat/magento2-module-discount-exclusion/issues/6)). The bypass cap is calculated from the product's base-currency prices and applied unchanged to both `base_discount_amount` and `discount_amount`. On a store whose display currency differs from its base currency, the display-currency discount is therefore wrong, and fixed-amount messages format a base amount with the display currency symbol.
+- **Customer group and website for catalog price rules.** `CatalogRuleStrategy` takes the customer group from the customer session and the website from the current store, not from the quote. Requests without a customer session (REST and GraphQL with a customer token) are evaluated as NOT LOGGED IN, and admin-created orders are evaluated against the admin website. Catalog rules limited to a group or website can therefore be missed in those contexts.
+- **Tier prices and custom prices are ignored.** The existing discount is taken from the product's regular and final price at quantity 1. Tier prices and custom item prices are not considered, so under bypass the combined discount can exceed `max(existing, rule)`.
+- **Bundle products.** For items with children, the first child's product decides whether the item is excluded and is used for the cap. For dynamic-price bundles Magento distributes the discount to the children, so the cap on the parent has no effect while the item is still marked and reported as adjusted.
+- **Coupon auto-removal.** It only runs on the cart page coupon form (`checkout/cart/couponPost`). Coupons applied via REST, GraphQL or checkouts with their own endpoints are not removed. It reads only the shipping address discount, which is 0 for virtual-only carts, and that amount also includes automatic (non-coupon) rule discounts.
+- **Two bypass rules on one item stack.** Each bypass-enabled rule compares only against the catalog/special-price discount and ignores cart-rule discounts already on the item, so two bypass rules on the same item each add their own difference.
+- The cap does not update Magento's per-rule discount breakdown (`discounts` extension attribute) or `original_discount_amount`; those still show the uncapped rule amount.
 
 ## Technical Details
 
@@ -416,94 +458,33 @@ The toggle is stored as the `bypass_discount_exclusion` column on the `salesrule
 
 ```
 src/
-├── Api/
-│   ├── ConfigInterface.php
-│   ├── Data/
-│   │   ├── BypassResult.php                       # Readonly value object for max-discount results
-│   │   └── BypassResultType.php                   # Enum: ADJUSTED, EXISTING_BETTER, STACKING_FALLBACK
-│   ├── DiscountExclusionManagerInterface.php
-│   ├── DiscountExclusionStrategyInterface.php
-│   ├── ExclusionMessageBuilderInterface.php       # Message building service interface
-│   ├── ExclusionResultCollectorInterface.php
-│   ├── MaxDiscountCalculatorInterface.php         # Max-discount calculator interface
-│   ├── MessageProcessorInterface.php
-│   └── StrategyEligibilityGuardInterface.php
+├── Api/                    Service contracts, BypassResult value object and BypassResultType enum
+├── Console/Command/        discount-exclusion:sync-bypass-default
 ├── Model/
-│   ├── MessageGroups.php
-│   ├── SessionKeys.php
-│   ├── Strategy/
-│   │   ├── CatalogRuleStrategy.php
-│   │   └── SpecialPriceStrategy.php
-│   └── StrategyEligibilityGuards/
-│       ├── Ampromo.php
-│       ├── CouponOnly.php
-│       └── ZeroPrice.php
-├── Observer/
-│   ├── CartPageLoadObserver.php                   # Displays queued messages on cart page
-│   ├── CartUpdateObserver.php                     # Queues messages on cart changes
-│   └── CouponPostObserver.php                     # Handles coupon apply messages + removal
-├── Plugin/
-│   └── SalesRule/
-│       └── Model/
-│           └── ValidatorPlugin.php                # Main interception point + bypass logic
-├── Service/
-│   ├── Config.php
-│   ├── DiscountExclusionManager.php
-│   ├── ExclusionMessageBuilder.php                # Builds exclusion + bypass messages
-│   ├── ExclusionResultCollector.php               # Collects excluded + bypassed items
-│   ├── MaxDiscountCalculator.php                  # Computes capped bypass discounts
-│   └── MessageProcessor.php
-├── etc/
-│   ├── acl.xml
-│   ├── adminhtml/
-│   │   └── system.xml
-│   ├── config.xml
-│   ├── db_schema.xml                              # bypass_discount_exclusion column
-│   ├── db_schema_whitelist.json
-│   ├── di.xml
-│   ├── frontend/
-│   │   └── events.xml
-│   └── module.xml
-├── i18n/
-│   ├── de_DE.csv
-│   ├── en_US.csv
-│   ├── es_ES.csv
-│   ├── fr_FR.csv
-│   └── it_IT.csv
-├── registration.php
-└── view/
-    └── adminhtml/
-        └── ui_component/
-            └── sales_rule_form.xml                # Bypass toggle on rule form
-
-Test/
-└── Unit/
-    ├── Model/
-    │   ├── Strategy/
-    │   │   ├── CatalogRuleStrategyTest.php
-    │   │   └── SpecialPriceStrategyTest.php
-    │   └── StrategyEligibilityGuards/
-    │       ├── AmpromoTest.php
-    │       ├── CouponOnlyTest.php
-    │       └── ZeroPriceTest.php
-    ├── Observer/
-    │   ├── CartPageLoadObserverTest.php
-    │   └── CartUpdateObserverTest.php
-    ├── Plugin/
-    │   └── SalesRule/
-    │       └── Model/
-    │           └── ValidatorPluginTest.php
-    └── Service/
-        ├── DiscountExclusionManagerTest.php
-        ├── ExclusionMessageBuilderTest.php
-        ├── ExclusionResultCollectorTest.php
-        └── MaxDiscountCalculatorTest.php
+│   ├── Strategy/           SpecialPriceStrategy, CatalogRuleStrategy
+│   └── StrategyEligibilityGuards/  CouponOnly, Ampromo, ZeroPrice
+├── Observer/               CouponPost, CartUpdate, CartPageLoad, CollectTotalsMessageQueue
+├── Plugin/SalesRule/Model/
+│   ├── ValidatorPlugin.php                      around Validator::process()
+│   ├── Converter/ToDataModelPlugin.php          REST extension attribute (model → data)
+│   ├── Converter/ToModelPlugin.php              REST extension attribute (data → model)
+│   └── ResourceModel/Rule/DataProviderPlugin.php  bypass default on the rule form
+├── Service/                Config, DiscountExclusionManager, MaxDiscountCalculator,
+│                           ExclusionResultCollector, ExclusionMessageBuilder
+├── etc/                    module, di, acl, config, system, db_schema, extension_attributes,
+│                           frontend/events.xml, graphql/events.xml
+├── i18n/                   en_US, de_DE, es_ES, fr_FR, it_IT
+└── view/adminhtml/ui_component/sales_rule_form.xml
+Test/Unit/                  PHPUnit tests, mirroring src/
 ```
+
+`Api/MessageProcessorInterface`, `Service/MessageProcessor` and `Model/MessageGroups` are deprecated, unused, and will be removed in 2.0.0.
 
 ### Event Observers
 
 ```xml
-<!-- Cart page load: display queued messages, clear session -->
+<!-- etc/frontend/events.xml -->
+<!-- Cart page load: display queued messages -->
 <event name="controller_action_predispatch_checkout_cart_index">
     <observer name="discount_exclusion_cart_load"
               instance="PixelPerfect\DiscountExclusion\Observer\CartPageLoadObserver"/>
@@ -528,12 +509,20 @@ Test/
     <observer name="discount_exclusion_cart_delete"
               instance="PixelPerfect\DiscountExclusion\Observer\CartUpdateObserver"/>
 </event>
+
+<!-- etc/graphql/events.xml -->
+<event name="sales_quote_collect_totals_after">
+    <observer name="discount_exclusion_graphql_message_queue"
+              instance="PixelPerfect\DiscountExclusion\Observer\CollectTotalsMessageQueueObserver"/>
+</event>
 ```
 
 ## Requirements
 
-- Magento 2.4.x or higher
-- PHP 8.3+
+- PHP 8.3 or 8.4 (`php: ^8.3`; the code uses typed class constants, so PHP 8.2 is not supported)
+- Magento Open Source or Adobe Commerce 2.4 (`magento/framework: ^103.0`). Because of the PHP requirement this means 2.4.7 or later in practice.
+- Magento modules: Catalog, CatalogRule, Checkout, Config, Customer, Quote, SalesRule, Store
+- No Hyvä dependency. The module ships no storefront templates or JavaScript; customer messages go through Magento's message manager.
 
 ## Installation
 
@@ -544,29 +533,35 @@ bin/magento setup:upgrade
 bin/magento cache:flush
 ```
 
-## Testing
-
-The module includes comprehensive unit tests for all core components.
+## Uninstallation
 
 ```bash
-# Run all module tests
-vendor/bin/phpunit
-
-# Run specific test class
-vendor/bin/phpunit Test/Unit/Service/MaxDiscountCalculatorTest.php
+bin/magento module:disable PixelPerfect_DiscountExclusion
+composer remove pixelperfectat/magento2-module-discount-exclusion
+bin/magento setup:upgrade
+bin/magento cache:flush
 ```
 
-**Static analysis** (PHPStan level 6):
+Alternatively, `bin/magento module:uninstall PixelPerfect_DiscountExclusion` disables the module and removes the Composer package in one step.
+
+The module adds the `bypass_discount_exclusion` column to the `salesrule` table. Check whether it is still there after removal and drop it manually if you no longer need it.
+
+## Development and checks
+
+The checks run in a PHP 8.3 environment with the dev dependencies installed (`composer install`):
+
 ```bash
-vendor/bin/phpstan analyse
+composer check          # all of the below, in this order
+composer ci:validate    # composer validate
+composer ci:normalize   # composer normalize --dry-run
+composer lint           # parallel-lint
+composer cs             # phpcs (PixelPerfect standard)
+composer stan           # PHPStan (level from pixelperfectat/coding-standard)
+composer test           # PHPUnit unit tests
+composer infection      # Infection mutation testing (needs Xdebug or PCOV for coverage)
 ```
 
-**Test coverage**:
-- Guards: `Ampromo`, `CouponOnly`, `ZeroPrice`
-- Strategies: `SpecialPriceStrategy`, `CatalogRuleStrategy`
-- Services: `DiscountExclusionManager`, `ExclusionResultCollector`, `MaxDiscountCalculator`, `ExclusionMessageBuilder`
-- Observers: `CartPageLoadObserver`, `CartUpdateObserver`
-- Plugins: `ValidatorPlugin` (standard exclusion + bypass flows)
+`ci:normalize` is not part of `check`. The unit tests cover every class in `src/` except the deprecated `MessageProcessor`. There are no integration tests against a running Magento instance.
 
 ## Translations
 
@@ -576,7 +571,12 @@ All exclusion messages, bypass messages, admin labels, and tooltips are translat
 
 ## Debugging
 
-The module logs to `var/log/debug.log` with the `DiscountExclusion:` prefix. Key breakpoints for debugging:
+All log lines start with `DiscountExclusion:` and go through Magento's default PSR logger:
+
+- Decisions an operator usually needs (a discount was blocked, a bypass discount was capped, a coupon was removed) are logged at `info` level and end up in `var/log/system.log`.
+- The step-by-step trail (each guard and strategy with its result, the bypass calculation) is logged at `debug` level in `var/log/debug.log`, which Magento only writes when debug logging is enabled (`bin/magento setup:config:set --enable-debug-logging=true`).
+
+Key places to set breakpoints:
 
 - `ValidatorPlugin::aroundProcess()` — Entry point for discount validation
 - `ValidatorPlugin::handleBypass()` — Bypass flow with max-discount logic
@@ -589,9 +589,8 @@ The module logs to `var/log/debug.log` with the `DiscountExclusion:` prefix. Key
 
 - Additional default guards and strategies
 - Event dispatching for observability
-- Performance monitoring and metrics
 - Compatibility with third-party discount modules
-- GraphQL support for headless checkout
+- Exclusion messages in GraphQL responses for headless storefronts
 
 ## License
 
