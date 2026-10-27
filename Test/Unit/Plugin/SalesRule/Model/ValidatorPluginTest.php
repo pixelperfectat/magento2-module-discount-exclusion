@@ -16,6 +16,7 @@ use PixelPerfect\DiscountExclusion\Api\DiscountExclusionManagerInterface;
 use PixelPerfect\DiscountExclusion\Api\ExclusionResultCollectorInterface;
 use PixelPerfect\DiscountExclusion\Api\MaxDiscountCalculatorInterface;
 use PixelPerfect\DiscountExclusion\Plugin\SalesRule\Model\ValidatorPlugin;
+use PixelPerfect\DiscountExclusion\Service\MaxDiscountCalculator;
 use Psr\Log\LoggerInterface;
 
 class ValidatorPluginTest extends TestCase
@@ -569,5 +570,393 @@ class ValidatorPluginTest extends TestCase
         $proceed = fn($item, $rule) => $this->validator;
 
         $this->plugin->aroundProcess($this->validator, $proceed, $this->item, $this->rule);
+    }
+
+    // --- Disabled module, product resolution ---
+
+    public function testModuleDisabledSkipsAllExclusionLogic(): void
+    {
+        $this->config->method('isEnabled')->with(1)->willReturn(false);
+        $this->item->method('getParentItem')->willReturn(null);
+        $this->quote->method('getCouponCode')->willReturn('SAVE10');
+        $this->rule->method('getData')->willReturn(1);
+
+        $this->discountExclusionManager->expects($this->never())->method('shouldExcludeFromDiscount');
+        $this->maxDiscountCalculator->expects($this->never())->method('calculate');
+        $this->resultCollector->expects($this->never())->method('addExcludedItem');
+        $this->resultCollector->expects($this->never())->method('addBypassedItem');
+
+        $calls = 0;
+        $proceed = function () use (&$calls) {
+            $calls++;
+            return $this->validator;
+        };
+
+        $this->plugin->aroundProcess($this->validator, $proceed, $this->item, $this->rule);
+
+        $this->assertSame(1, $calls, 'Magento must run its own discount logic exactly once');
+        $this->assertNull($this->item->getData('pp_discount_excluded'));
+    }
+
+    public function testChildWithoutProductFallsBackToTheParentProduct(): void
+    {
+        $this->config->method('isEnabled')->willReturn(true);
+        $this->quote->method('getCouponCode')->willReturn('SAVE10');
+        $this->rule->method('getData')->willReturn(0);
+
+        $childItem = $this->getMockForAbstractClass(AbstractItem::class, [], '', false, true, true, ['getProduct']);
+        $childItem->method('getProduct')->willReturn(null);
+
+        $parentItem = $this->createItem($this->product, 1.0, [$childItem]);
+
+        $this->discountExclusionManager->expects($this->once())
+            ->method('shouldExcludeFromDiscount')
+            ->with($this->product, $parentItem, $this->rule)
+            ->willReturn(false);
+
+        $this->plugin->aroundProcess($this->validator, fn() => $this->validator, $parentItem, $this->rule);
+    }
+
+    // --- Standard exclusion: operator log lines ---
+
+    public function testBlockedDiscountIsLoggedWithProductRuleAndCoupon(): void
+    {
+        $this->config->method('isEnabled')->willReturn(true);
+        $this->item->method('getParentItem')->willReturn(null);
+        $this->quote->method('getCouponCode')->willReturn('TESTCODE');
+        $this->rule->method('getData')->willReturn(0);
+        $this->discountExclusionManager->method('shouldExcludeFromDiscount')->willReturn(true);
+
+        $this->logger->expects($this->once())
+            ->method('info')
+            ->with('DiscountExclusion: Blocking discount for product', [
+                'product_sku' => 'TEST-SKU',
+                'product_name' => 'Test Product',
+                'rule_id' => 1,
+                'coupon_code' => 'TESTCODE',
+            ]);
+
+        $this->plugin->aroundProcess($this->validator, fn() => $this->validator, $this->item, $this->rule);
+    }
+
+    public function testUntrackableExclusionIsLoggedAsWarningWithSku(): void
+    {
+        $this->config->method('isEnabled')->willReturn(true);
+        $this->item->method('getParentItem')->willReturn(null);
+        $this->quote->method('getCouponCode')->willReturn(null);
+        $this->rule->method('getData')->willReturn(0);
+        $this->discountExclusionManager->method('shouldExcludeFromDiscount')->willReturn(true);
+
+        $this->logger->expects($this->once())
+            ->method('warning')
+            ->with('DiscountExclusion: No coupon code found, cannot track exclusion', ['product_sku' => 'TEST-SKU']);
+
+        $this->plugin->aroundProcess($this->validator, fn() => $this->validator, $this->item, $this->rule);
+    }
+
+    // --- Bypass: existing better ---
+
+    /**
+     * @dataProvider missingCouponProvider
+     */
+    public function testExistingBetterWithoutCouponIsNotRecorded(?string $couponCode): void
+    {
+        $this->givenBypassRuleOnDiscountedProduct($couponCode, $this->existingBetterResult());
+
+        $this->resultCollector->expects($this->never())->method('addBypassedItem');
+
+        $result = $this->plugin->aroundProcess(
+            $this->validator,
+            fn() => $this->fail('Magento must not apply the rule when the existing discount is better'),
+            $this->item,
+            $this->rule
+        );
+
+        $this->assertSame($this->validator, $result);
+        $this->assertTrue($this->item->getData('pp_discount_excluded'));
+    }
+
+    public function testExistingBetterIsLoggedWithProductAndRule(): void
+    {
+        $this->givenBypassRuleOnDiscountedProduct('BYPASS20', $this->existingBetterResult());
+
+        $this->logger->expects($this->once())
+            ->method('info')
+            ->with('DiscountExclusion: Bypass existing better, blocking discount', [
+                'product_sku' => 'TEST-SKU',
+                'rule_id' => 1,
+            ]);
+
+        $this->plugin->aroundProcess($this->validator, fn() => $this->validator, $this->item, $this->rule);
+    }
+
+    // --- Bypass: adjusted ---
+
+    public function testAdjustedItemIsRecordedWithAllMessageParams(): void
+    {
+        $this->givenBypassRuleOnDiscountedProduct('BYPASS30', $this->adjustedResult(5.0));
+        $item = $this->createItem($this->product, 1.0);
+
+        $expectedParams = [
+            'simpleAction' => Rule::BY_PERCENT_ACTION,
+            'ruleDiscountPercent' => 30.0,
+            'existingDiscountPercent' => 25.0,
+            'additionalDiscountPercent' => 5.0,
+            'ruleDiscountAmount' => 30.0,
+            'existingDiscountAmount' => 25.0,
+            'additionalDiscountAmount' => 5.0,
+        ];
+
+        $this->resultCollector->expects($this->once())
+            ->method('addBypassedItem')
+            ->with($item, BypassResultType::ADJUSTED, 'BYPASS30', $expectedParams);
+
+        $this->plugin->aroundProcess($this->validator, $this->magentoApplies(22.5), $item, $this->rule);
+
+        $this->assertTrue($item->getData('pp_discount_bypass_adjusted'));
+        $this->assertSame($expectedParams, $item->getData('pp_discount_exclusion_params'));
+    }
+
+    /**
+     * @dataProvider missingCouponProvider
+     */
+    public function testAdjustedWithoutCouponIsCappedButNotRecorded(?string $couponCode): void
+    {
+        $this->givenBypassRuleOnDiscountedProduct($couponCode, $this->adjustedResult(5.0));
+        $item = $this->createItem($this->product, 1.0);
+
+        $this->resultCollector->expects($this->never())->method('addBypassedItem');
+
+        $this->plugin->aroundProcess($this->validator, $this->magentoApplies(22.5), $item, $this->rule);
+
+        $this->assertSame(5.0, $item->getDiscountAmount());
+    }
+
+    /**
+     * @return array<string, array{?string}>
+     */
+    public static function missingCouponProvider(): array
+    {
+        return [
+            'no coupon' => [null],
+            'empty coupon' => [''],
+        ];
+    }
+
+    public function testAdjustedReturnsWhatMagentoReturned(): void
+    {
+        $this->givenBypassRuleOnDiscountedProduct('BYPASS30', $this->adjustedResult(5.0));
+        $otherValidator = $this->createMock(Validator::class);
+
+        $result = $this->plugin->aroundProcess(
+            $this->validator,
+            function (AbstractItem $item) use ($otherValidator) {
+                $item->setDiscountAmount(22.5);
+                return $otherValidator;
+            },
+            $this->createItem($this->product, 1.0),
+            $this->rule
+        );
+
+        $this->assertSame($otherValidator, $result);
+    }
+
+    /**
+     * Only this rule's own share of the item discount is compared with the cap. An item that
+     * already carries 3.00 from an earlier rule and gets 4.00 from this one stays at 7.00,
+     * because 4.00 is below the 5.00 cap.
+     */
+    public function testCapComparesOnlyThisRulesShareOfTheDiscount(): void
+    {
+        $this->givenBypassRuleOnDiscountedProduct('BYPASS30', $this->adjustedResult(5.0));
+        $item = $this->createItem($this->product, 1.0);
+        $item->setDiscountAmount(3.0);
+        $item->setBaseDiscountAmount(3.0);
+
+        $this->plugin->aroundProcess($this->validator, $this->magentoApplies(4.0), $item, $this->rule);
+
+        $this->assertSame(7.0, $item->getDiscountAmount());
+        $this->assertSame(7.0, $item->getBaseDiscountAmount());
+    }
+
+    /**
+     * When this rule's share exceeds the cap, the cap is added on top of the earlier rules'
+     * discount. See README "Known limitations": two bypass rules on one item stack this way.
+     */
+    public function testCapIsAddedOnTopOfEarlierRulesDiscount(): void
+    {
+        $this->givenBypassRuleOnDiscountedProduct('BYPASS30', $this->adjustedResult(5.0));
+        $item = $this->createItem($this->product, 1.0);
+        $item->setDiscountAmount(3.0);
+        $item->setBaseDiscountAmount(2.0);
+
+        $this->plugin->aroundProcess($this->validator, $this->magentoApplies(22.5), $item, $this->rule);
+
+        $this->assertSame(8.0, $item->getDiscountAmount());
+        $this->assertSame(7.0, $item->getBaseDiscountAmount());
+    }
+
+    /**
+     * A rule discount within a tenth of a cent above the cap is treated as equal and left alone.
+     */
+    public function testDiscountWithinToleranceOfTheCapIsNotRewritten(): void
+    {
+        $this->givenBypassRuleOnDiscountedProduct('BYPASS30', $this->adjustedResult(5.0));
+        $item = $this->createItem($this->product, 1.0);
+
+        $this->logger->expects($this->never())->method('info');
+
+        $this->plugin->aroundProcess($this->validator, $this->magentoApplies(5.0005), $item, $this->rule);
+
+        $this->assertSame(5.0005, $item->getDiscountAmount());
+    }
+
+    public function testCapIsLoggedWithOriginalAndCappedAmount(): void
+    {
+        $this->givenBypassRuleOnDiscountedProduct('BYPASS30', $this->adjustedResult(5.0));
+
+        $this->logger->expects($this->once())
+            ->method('info')
+            ->with('DiscountExclusion: Capped bypass discount', [
+                'product_sku' => 'TEST-SKU',
+                'rule_id' => 1,
+                'original_discount' => 22.5,
+                'capped_to' => 5.0,
+            ]);
+
+        $this->plugin->aroundProcess(
+            $this->validator,
+            $this->magentoApplies(22.5),
+            $this->createItem($this->product, 1.0),
+            $this->rule
+        );
+    }
+
+    /**
+     * Characterization with the real calculator: the capped item discount keeps four decimals.
+     *
+     * Regular 19.99, catalog rule 10% (final 17.99), coupon 15% with bypass, qty 1. Magento
+     * would discount 2.70 (15% of 17.99, rounded); the plugin caps the item to 0.9985, the
+     * difference between 15% of the regular price (2.9985) and the existing 2.00.
+     *
+     * This is intentional and must not be "fixed" by rounding here: Magento rounds discounts
+     * with carried deltas (SalesRule\Model\Utility::deltaRoundingFix), and naive rounding of
+     * the cap would introduce drift. Do not change it without a real checkout check against a
+     * payment provider's line-item totals.
+     */
+    public function testBypassCapIsNotRoundedToCurrencyPrecision(): void
+    {
+        $product = $this->createMock(Product::class);
+        $product->method('getSku')->willReturn('TEST-SKU');
+        $product->method('getPrice')->willReturn(19.99);
+        $product->method('getFinalPrice')->willReturn(17.99);
+
+        $rule = $this->getMockBuilder(Rule::class)
+            ->disableOriginalConstructor()
+            ->addMethods(['getDiscountAmount'])
+            ->onlyMethods(['getId', 'getData', 'getSimpleAction'])
+            ->getMock();
+        $rule->method('getId')->willReturn(7);
+        $rule->method('getData')->willReturn(1);
+        $rule->method('getSimpleAction')->willReturn(Rule::BY_PERCENT_ACTION);
+        $rule->method('getDiscountAmount')->willReturn(15.0);
+
+        $this->config->method('isEnabled')->willReturn(true);
+        $this->quote->method('getCouponCode')->willReturn('BYPASS15');
+        $this->discountExclusionManager->method('shouldExcludeFromDiscount')->willReturn(true);
+
+        $plugin = new ValidatorPlugin(
+            $this->config,
+            $this->discountExclusionManager,
+            $this->resultCollector,
+            new MaxDiscountCalculator(),
+            $this->logger
+        );
+        $item = $this->createItem($product, 1.0);
+
+        $plugin->aroundProcess($this->validator, $this->magentoApplies(2.70), $item, $rule);
+
+        $this->assertSame(0.9985, $item->getDiscountAmount());
+        $this->assertSame(0.9985, $item->getBaseDiscountAmount());
+    }
+
+    private function givenBypassRuleOnDiscountedProduct(?string $couponCode, BypassResult $result): void
+    {
+        $this->config->method('isEnabled')->willReturn(true);
+        $this->item->method('getParentItem')->willReturn(null);
+        $this->quote->method('getCouponCode')->willReturn($couponCode);
+        $this->rule->method('getData')->with('bypass_discount_exclusion')->willReturn('1');
+        $this->discountExclusionManager->method('shouldExcludeFromDiscount')->willReturn(true);
+        $this->maxDiscountCalculator->method('calculate')->willReturn($result);
+    }
+
+    /**
+     * Simulates Magento's RulesApplier adding this rule's discount to the item.
+     */
+    private function magentoApplies(float $ruleDiscount): callable
+    {
+        return function (AbstractItem $item) use ($ruleDiscount) {
+            $item->setDiscountAmount((float) $item->getDiscountAmount() + $ruleDiscount);
+            $item->setBaseDiscountAmount((float) $item->getBaseDiscountAmount() + $ruleDiscount);
+            return $this->validator;
+        };
+    }
+
+    /**
+     * An item whose discount amounts are stored like on a real quote item.
+     *
+     * @param AbstractItem[] $children
+     */
+    private function createItem(Product $product, float $qty, array $children = []): AbstractItem&MockObject
+    {
+        $item = $this->getMockForAbstractClass(
+            AbstractItem::class,
+            [],
+            '',
+            false,
+            true,
+            true,
+            ['getStoreId', 'getProduct', 'getQuote', 'getChildren', 'getParentItem', 'getQty']
+        );
+        $item->method('getStoreId')->willReturn(1);
+        $item->method('getProduct')->willReturn($product);
+        $item->method('getQuote')->willReturn($this->quote);
+        $item->method('getChildren')->willReturn($children);
+        $item->method('getParentItem')->willReturn(null);
+        $item->method('getQty')->willReturn($qty);
+
+        return $item;
+    }
+
+    private function adjustedResult(float $maxAllowedTotal): BypassResult
+    {
+        return new BypassResult(
+            type: BypassResultType::ADJUSTED,
+            additionalDiscount: $maxAllowedTotal,
+            maxAllowedTotal: $maxAllowedTotal,
+            regularPrice: 100.0,
+            currentPrice: 75.0,
+            existingDiscountAmount: 25.0,
+            ruleDiscountFromRegular: 30.0,
+            existingDiscountPercent: 25.0,
+            ruleDiscountPercent: 30.0,
+            qty: 1.0,
+        );
+    }
+
+    private function existingBetterResult(): BypassResult
+    {
+        return new BypassResult(
+            type: BypassResultType::EXISTING_BETTER,
+            additionalDiscount: 0.0,
+            maxAllowedTotal: 0.0,
+            regularPrice: 100.0,
+            currentPrice: 75.0,
+            existingDiscountAmount: 25.0,
+            ruleDiscountFromRegular: 20.0,
+            existingDiscountPercent: 25.0,
+            ruleDiscountPercent: 20.0,
+            qty: 1.0,
+        );
     }
 }
