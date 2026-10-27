@@ -8,4 +8,14 @@
             <directory suffix="Test.php">Test/Unit</directory>
         </testsuite>
     </testsuites>
+    <coverage>
+        <include>
+            <directory suffix=".php">src/Api</directory>
+            <directory suffix=".php">src/Console</directory>
+            <directory suffix=".php">src/Model</directory>
+            <directory suffix=".php">src/Observer</directory>
+            <directory suffix=".php">src/Plugin</directory>
+            <directory suffix=".php">src/Service</directory>
+        </include>
+    </coverage>
 </phpunit>

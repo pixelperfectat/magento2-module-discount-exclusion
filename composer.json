@@ -21,8 +21,9 @@
         "magento/module-sales-rule": "^101.0"
     },
     "require-dev": {
+        "infection/infection": "^0.35",
         "phpunit/phpunit": "^9.6",
-        "pixelperfectat/coding-standard": "^0.1.0"
+        "pixelperfectat/coding-standard": "^0.2.0"
     },
     "autoload": {
         "files": [
@@ -38,7 +39,7 @@
         }
     },
     "scripts": {
-        "lint": "parallel-lint --exclude vendor .",
+        "lint": "parallel-lint --exclude vendor --exclude generated .",
         "cs": "phpcs",
         "cs:fix": "phpcbf",
         "stan": "phpstan analyse",
@@ -49,8 +50,11 @@
             "@lint",
             "@cs",
             "@stan",
-            "@test"
-        ]
+            "@test",
+            "@infection"
+        ],
+        "infection": "infection --with-uncovered --min-msi=85 --min-covered-msi=90 --threads=max",
+        "ci:normalize": "@composer normalize --dry-run --diff"
     },
     "config": {
         "sort-packages": true,
@@ -58,6 +62,7 @@
             "cweagans/composer-patches": true,
             "dealerdirect/phpcodesniffer-composer-installer": true,
             "ergebnis/composer-normalize": true,
+            "infection/extension-installer": true,
             "laminas/laminas-dependency-plugin": true,
             "magento/*": true,
             "php-http/discovery": true,
