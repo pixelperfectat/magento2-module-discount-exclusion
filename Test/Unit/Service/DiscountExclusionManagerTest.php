@@ -193,4 +193,117 @@ class DiscountExclusionManagerTest extends TestCase
 
         $manager->shouldExcludeFromDiscount($this->product, $this->item, $this->rule);
     }
+
+    public function testWorksWithoutALogger(): void
+    {
+        $strategy = $this->createMock(DiscountExclusionStrategyInterface::class);
+        $strategy->method('shouldExcludeFromDiscount')->willReturn(true);
+
+        $manager = new DiscountExclusionManager(['special_price' => $strategy]);
+
+        $this->assertTrue($manager->shouldExcludeFromDiscount($this->product, $this->item, $this->rule));
+    }
+
+    /**
+     * The info line names the strategy that excluded the product; operators use it to see why.
+     */
+    public function testExclusionIsLoggedWithTheStrategyNameAndPrices(): void
+    {
+        $passing = $this->createMock(DiscountExclusionStrategyInterface::class);
+        $passing->method('shouldExcludeFromDiscount')->willReturn(false);
+        $excluding = $this->createMock(DiscountExclusionStrategyInterface::class);
+        $excluding->method('shouldExcludeFromDiscount')->willReturn(true);
+
+        $this->logger->expects($this->once())
+            ->method('info')
+            ->with("DiscountExclusion: Product excluded by 'catalog_rule'", [
+                'product_id' => 100,
+                'product_sku' => 'TEST-SKU',
+                'final_price' => 29.99,
+                'regular_price' => 39.99,
+                'special_price' => null,
+                'rule_id' => 1,
+                'rule_action' => 'by_percent',
+            ]);
+
+        $manager = new DiscountExclusionManager(
+            ['special_price' => $passing, 'catalog_rule' => $excluding],
+            [],
+            $this->logger
+        );
+
+        $this->assertTrue($manager->shouldExcludeFromDiscount($this->product, $this->item, $this->rule));
+    }
+
+    /**
+     * The debug trail is the documented way (README "Debugging") to see which guard or
+     * strategy decided an item, so its messages and decision fields are asserted.
+     */
+    public function testDebugTrailNamesEachGuardAndStrategyWithItsDecision(): void
+    {
+        $guard = $this->createMock(StrategyEligibilityGuardInterface::class);
+        $guard->method('canProcess')->willReturn(true);
+        $strategy = $this->createMock(DiscountExclusionStrategyInterface::class);
+        $strategy->method('shouldExcludeFromDiscount')->willReturn(false);
+
+        $trail = [];
+        $this->logger->method('debug')->willReturnCallback(
+            function (string $message, array $context) use (&$trail) {
+                $trail[] = [$message, $context];
+            }
+        );
+
+        $manager = new DiscountExclusionManager(
+            ['special_price' => $strategy],
+            ['coupon_only' => $guard],
+            $this->logger
+        );
+        $manager->shouldExcludeFromDiscount($this->product, $this->item, $this->rule);
+
+        $this->assertSame(
+            [
+                ['DiscountExclusion: Checking exclusion', [
+                    'product_id' => 100,
+                    'product_sku' => 'TEST-SKU',
+                    'final_price' => 29.99,
+                    'regular_price' => 39.99,
+                    'special_price' => null,
+                    'rule_id' => 1,
+                    'rule_action' => 'by_percent',
+                ]],
+                ["DiscountExclusion: Guard 'coupon_only' result", [
+                    'can_process' => true,
+                    'product_sku' => 'TEST-SKU',
+                    'rule_id' => 1,
+                ]],
+                ["DiscountExclusion: Strategy 'special_price' result", [
+                    'should_exclude' => false,
+                    'product_sku' => 'TEST-SKU',
+                ]],
+                ['DiscountExclusion: Product NOT excluded - allowing discount', ['product_sku' => 'TEST-SKU']],
+            ],
+            $trail
+        );
+    }
+
+    public function testDebugTrailNamesTheGuardThatSkippedTheCheck(): void
+    {
+        $guard = $this->createMock(StrategyEligibilityGuardInterface::class);
+        $guard->method('canProcess')->willReturn(false);
+
+        $messages = [];
+        $this->logger->method('debug')->willReturnCallback(
+            function (string $message, array $context) use (&$messages) {
+                $messages[$message] = $context;
+            }
+        );
+
+        $manager = new DiscountExclusionManager([], ['ampromo' => $guard], $this->logger);
+        $manager->shouldExcludeFromDiscount($this->product, $this->item, $this->rule);
+
+        $this->assertSame(
+            ['product_sku' => 'TEST-SKU'],
+            $messages["DiscountExclusion: Guard 'ampromo' blocked - skipping exclusion check"] ?? null
+        );
+    }
 }

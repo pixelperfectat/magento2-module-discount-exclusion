@@ -959,4 +959,37 @@ class ValidatorPluginTest extends TestCase
             qty: 1.0,
         );
     }
+
+    /**
+     * The bypass decision is part of the documented debug trail (README "Debugging").
+     */
+    public function testBypassDecisionIsInTheDebugTrail(): void
+    {
+        $this->givenBypassRuleOnDiscountedProduct('BYPASS30', $this->adjustedResult(5.0));
+
+        $messages = [];
+        $this->logger->method('debug')->willReturnCallback(
+            function (string $message, array $context) use (&$messages) {
+                $messages[$message] = $context;
+            }
+        );
+
+        $this->plugin->aroundProcess(
+            $this->validator,
+            $this->magentoApplies(22.5),
+            $this->createItem($this->product, 1.0),
+            $this->rule
+        );
+
+        $this->assertSame(
+            [
+                'product_sku' => 'TEST-SKU',
+                'rule_id' => 1,
+                'type' => 'adjusted',
+                'additional_discount' => 5.0,
+                'max_allowed_total' => 5.0,
+            ],
+            $messages['DiscountExclusion: Bypass result'] ?? null
+        );
+    }
 }
