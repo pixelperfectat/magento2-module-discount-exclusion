@@ -2,12 +2,14 @@
     "$schema": "vendor/infection/infection/resources/schema.json",
     "source": {
         "directories": [
-            "src/Api",
-            "src/Console",
-            "src/Model",
-            "src/Observer",
-            "src/Plugin",
-            "src/Service"
+            "src"
+        ],
+        "excludes": [
+            "etc",
+            "i18n",
+            "view",
+            "registration.php",
+            "Service/MessageProcessor.php"
         ]
     },
     "logs": {

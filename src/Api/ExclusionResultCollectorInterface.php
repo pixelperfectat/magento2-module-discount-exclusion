@@ -26,6 +26,9 @@ interface ExclusionResultCollectorInterface
 
     /**
      * Check if there are any excluded items at all
+     *
+     * @deprecated Removal planned for 2.0.0. Not used by the module.
+     * @see self::hasExcludedItems()
      */
     public function hasAnyExcludedItems(): bool;
 
@@ -39,6 +42,8 @@ interface ExclusionResultCollectorInterface
     /**
      * Get all coupon codes that have excluded items
      *
+     * @deprecated Removal planned for 2.0.0. Not used by the module.
+     * @see self::hasExcludedItems()
      * @return string[]
      */
     public function getCouponCodes(): array;
@@ -65,6 +70,9 @@ interface ExclusionResultCollectorInterface
 
     /**
      * Check if there are any bypassed items at all
+     *
+     * @deprecated Removal planned for 2.0.0. Not used by the module.
+     * @see self::hasBypassedItems()
      */
     public function hasAnyBypassedItems(): bool;
 

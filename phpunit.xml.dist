@@ -17,5 +17,9 @@
             <directory suffix=".php">src/Plugin</directory>
             <directory suffix=".php">src/Service</directory>
         </include>
+        <exclude>
+            <!-- Deprecated and unused, removal planned for 2.0.0 -->
+            <file>src/Service/MessageProcessor.php</file>
+        </exclude>
     </coverage>
 </phpunit>
