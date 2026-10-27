@@ -141,4 +141,29 @@ class SyncBypassDefaultCommandTest extends TestCase
 
         return $method->invoke($this->command, $this->input, $this->output);
     }
+
+    public function testCommandIsRegisteredUnderItsDocumentedName(): void
+    {
+        $this->assertSame('discount-exclusion:sync-bypass-default', $this->command->getName());
+        $this->assertTrue($this->command->getDefinition()->hasOption('dry-run'));
+        $this->assertFalse($this->command->getDefinition()->getOption('dry-run')->acceptValue());
+    }
+
+    public function testDryRunCountsRulesThatDifferFromTheDefault(): void
+    {
+        $this->config->method('isBypassDefault')->willReturn(true);
+        $this->input->method('getOption')->with('dry-run')->willReturn(true);
+
+        $select = $this->createMock(Select::class);
+        $select->expects($this->once())->method('from')->with('salesrule', ['COUNT(*)'])->willReturnSelf();
+        $select->expects($this->once())
+            ->method('where')
+            ->with('IFNULL(bypass_discount_exclusion, 0) != ?', 1)
+            ->willReturnSelf();
+        $this->connection->method('select')->willReturn($select);
+        $this->connection->method('fetchOne')->willReturn('2');
+        $this->connection->expects($this->never())->method('update');
+
+        $this->assertSame(0, $this->invokeExecute());
+    }
 }

@@ -227,4 +227,22 @@ class ExclusionResultCollectorTest extends TestCase
 
         return $item;
     }
+
+    /**
+     * Products without a name are stored with an empty name, so messages can still be built.
+     */
+    public function testMissingProductNameIsStoredAsEmptyString(): void
+    {
+        $product = $this->createMock(Product::class);
+        $product->method('getId')->willReturn(7);
+        $product->method('getName')->willReturn(null);
+        $item = $this->getMockForAbstractClass(AbstractItem::class, [], '', false, true, true, ['getProduct']);
+        $item->method('getProduct')->willReturn($product);
+
+        $this->collector->addExcludedItem($item, 'reason', 'SAVE10');
+        $this->collector->addBypassedItem($item, BypassResultType::ADJUSTED, 'SAVE10');
+
+        $this->assertSame('', $this->collector->getExcludedItems('SAVE10')[7]['name']);
+        $this->assertSame('', $this->collector->getBypassedItems('SAVE10')[7]['name']);
+    }
 }
