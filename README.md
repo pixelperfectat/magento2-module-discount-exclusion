@@ -519,7 +519,7 @@ Test/Unit/                  PHPUnit tests, mirroring src/
 
 ## Requirements
 
-- PHP 8.3 or 8.4 (`php: ^8.3`; the code uses typed class constants, so PHP 8.2 is not supported)
+- PHP 8.3, 8.4 or 8.5 (`php: ^8.3`; the code uses typed class constants, so PHP 8.2 is not supported)
 - Magento Open Source or Adobe Commerce 2.4 (`magento/framework: ^103.0`). Because of the PHP requirement this means 2.4.7 or later in practice.
 - Magento modules: Catalog, CatalogRule, Checkout, Config, Customer, Quote, SalesRule, Store
 - No Hyvä dependency. The module ships no storefront templates or JavaScript; customer messages go through Magento's message manager.

@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Composer dist archive no longer contains the unit tests, the CI workflow or the QA tool configs.
 - Development toolchain moved to `pixelperfectat/coding-standard` 0.2.0 (PHPStan 2).
 - README documents all three configuration settings, the CLI command, the REST extension attribute, uninstallation and the known limitations.
+- PHP 8.5 is listed as supported (the `^8.3` constraint already allowed it); the checks pass on 8.5. From PHP 8.4 on, PHP's own `round()` treats exact halves differently, so a four-decimal intermediate amount such as 3.09845 becomes 3.0984 instead of 3.0985. Magento's own rounding follows the same PHP behaviour.
 
 ### Deprecated
 
