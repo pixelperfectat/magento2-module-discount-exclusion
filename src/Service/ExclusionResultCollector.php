@@ -14,12 +14,12 @@ use Psr\Log\LoggerInterface;
 class ExclusionResultCollector implements ExclusionResultCollectorInterface
 {
     /**
-     * @var array<string, array<string, array{name: string, reason: string}>>
+     * @var array<string, array<int|string, array{name: string, reason: string}>>
      */
     private array $excludedItems = [];
 
     /**
-     * @var array<string, array<string, array{name: string, type: BypassResultType, messageParams: array<string, float|string>}>>
+     * @var array<string, array<int|string, array{name: string, type: BypassResultType, messageParams: array<string, float|string>}>>
      */
     private array $bypassedItems = [];
 

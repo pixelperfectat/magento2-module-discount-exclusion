@@ -18,7 +18,7 @@ class ToModelPlugin
      * @param RuleDataModel $dataModel
      * @return Rule
      *
-     * @SuppressWarnings(PHPMD.UnusedFormalParameter)
+     * @SuppressWarnings("PHPMD.UnusedFormalParameter")
      */
     public function afterToModel(ToModel $subject, Rule $result, RuleDataModel $dataModel): Rule
     {

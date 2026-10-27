@@ -32,7 +32,7 @@ interface ExclusionResultCollectorInterface
     /**
      * Get all excluded items for a coupon code
      *
-     * @return array<string, array{name: string, reason: string}>
+     * @return array<int|string, array{name: string, reason: string}>
      */
     public function getExcludedItems(string $couponCode): array;
 
@@ -71,7 +71,7 @@ interface ExclusionResultCollectorInterface
     /**
      * Get all bypassed items for a coupon code
      *
-     * @return array<string, array{name: string, type: BypassResultType, messageParams: array<string, float|string>}>
+     * @return array<int|string, array{name: string, type: BypassResultType, messageParams: array<string, float|string>}>
      */
     public function getBypassedItems(string $couponCode): array;
 

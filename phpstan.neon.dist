@@ -1,6 +1,9 @@
 includes:
     # Shared level, bootstrap (bitexpert/phpstan-magento) and defaults.
     - vendor/pixelperfectat/coding-standard/phpstan.neon
+    # The baseline only holds three redundant null checks in the deprecated, unused
+    # Service/MessageProcessor (removal planned for 2.0). They are kept as they are
+    # rather than edited, because the class is frozen until it is deleted.
     - phpstan-baseline.neon
 
 parameters:

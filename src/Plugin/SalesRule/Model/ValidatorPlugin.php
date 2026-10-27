@@ -46,8 +46,11 @@ class ValidatorPlugin
             return $proceed($item, $rule);
         }
 
-        // Skip child items of complex products
-        if ($item->getParentItem()) {
+        // Skip child items of complex products. The PHPDoc of getParentItem() claims a non-null
+        // AbstractItem, but it returns null for top-level items.
+        /** @var AbstractItem|null $parentItem */
+        $parentItem = $item->getParentItem();
+        if ($parentItem !== null) {
             return $proceed($item, $rule);
         }
 
@@ -333,8 +336,12 @@ class ValidatorPlugin
         $product = $item->getProduct();
         $children = $item->getChildren();
 
-        if (count($children) > 0 && $children[0]->getProduct()) {
-            $product = $children[0]->getProduct();
+        if (count($children) > 0) {
+            /** @var Product|null $childProduct */
+            $childProduct = $children[0]->getProduct();
+            if ($childProduct !== null) {
+                $product = $childProduct;
+            }
         }
 
         return $product;
@@ -350,6 +357,7 @@ class ValidatorPlugin
      */
     private function getCouponCode(AbstractItem $item): ?string
     {
+        /** @var \Magento\Quote\Model\Quote|null $quote */
         $quote = $item->getQuote();
         if ($quote !== null) {
             $couponCode = $quote->getCouponCode();
