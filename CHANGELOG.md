@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Unit tests for `CouponPostObserver`, `DataProviderPlugin` and the store-scoped config flags, plus exact-text tests for every customer message and characterization tests that pin the current four-decimal bypass cap.
+- Infection mutation testing (`composer infection`), run as part of `composer check`.
+
+### Changed
+
+- `composer.json` now declares the Magento modules the code uses: `module-catalog-rule`, `module-checkout`, `module-config`, `module-customer`, `module-quote` and `module-store`.
+- The Composer dist archive no longer contains the unit tests, the CI workflow or the QA tool configs.
+- Development toolchain moved to `pixelperfectat/coding-standard` 0.2.0 (PHPStan 2).
+- README documents all three configuration settings, the CLI command, the REST extension attribute, uninstallation and the known limitations.
+
+### Deprecated
+
+- `Api\MessageProcessorInterface`, `Service\MessageProcessor`, `Model\MessageGroups` and `Model\SessionKeys::PROCESSED_PRODUCT_IDS` are unused and will be removed in 2.0.0.
+- `ExclusionResultCollectorInterface::hasAnyExcludedItems()`, `hasAnyBypassedItems()` and `getCouponCodes()` are unused and will be removed in 2.0.0. Use `hasExcludedItems()` / `hasBypassedItems()` with a coupon code.
+
+### Fixed
+
+- Three source files carried an "All rights reserved" header that contradicted the MIT license.
+
 ## [1.0.2] - 2026-07-09
 
 ### Fixed
@@ -18,6 +39,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Bypass discount cap now also updates `base_discount_amount`. Previously `handleBypassAdjusted()` capped only `discount_amount`, leaving the base discount at its full uncapped value — this made `base_grand_total` diverge from `grand_total` on single-currency stores and caused downstream consumers reading the base amount (e.g. payment integrations settling on `base_grand_total`) to charge the wrong amount (#5).
+
+## [1.0.0] - 2026-07-06
+
+### Added
+
+- MIT license.
+- Shared PixelPerfect coding standard, PHPStan configuration and a CI workflow.
+
+### Changed
+
+- Requires PHP 8.3 (`^8.3`, previously `^8.2`): the code uses typed class constants.
+- The module follows semantic versioning from this release on.
+
+## [0.2.1] - 2026-05-22
+
+### Added
+
+- `show_messages` setting (Show Customer Messages) to turn the customer-facing exclusion and bypass messages off.
+- Item data markers on quote items for each decision: `pp_discount_excluded`, `pp_discount_exclusion_reason`, `pp_discount_bypass_adjusted` and `pp_discount_exclusion_params`.
+- GraphQL-area observer on `sales_quote_collect_totals_after` that queues the messages in the checkout session.
+- REST API extension attribute `bypass_discount_exclusion` on `Magento\SalesRule\Api\Data\RuleInterface`.
+- `bypass_default` setting (Bypass Default for New Rules), used as the toggle's default on the cart price rule form.
+- CLI command `discount-exclusion:sync-bypass-default` (with `--dry-run`) to apply the bypass default to existing rules.
+
+### Fixed
+
+- Removed a leading newline from `registration.php`.
 
 ## [0.2.0] - 2026-02-09
 
@@ -58,6 +106,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 [Unreleased]: https://github.com/pixelperfectat/magento2-module-discount-exclusion/compare/1.0.2...HEAD
 [1.0.2]: https://github.com/pixelperfectat/magento2-module-discount-exclusion/compare/1.0.1...1.0.2
-[1.0.1]: https://github.com/pixelperfectat/magento2-module-discount-exclusion/compare/0.2.0...1.0.1
+[1.0.1]: https://github.com/pixelperfectat/magento2-module-discount-exclusion/compare/1.0.0...1.0.1
+[1.0.0]: https://github.com/pixelperfectat/magento2-module-discount-exclusion/compare/0.2.1...1.0.0
+[0.2.1]: https://github.com/pixelperfectat/magento2-module-discount-exclusion/compare/0.2.0...0.2.1
 [0.2.0]: https://github.com/pixelperfectat/magento2-module-discount-exclusion/compare/0.1.0...0.2.0
 [0.1.0]: https://github.com/pixelperfectat/magento2-module-discount-exclusion/releases/tag/0.1.0
