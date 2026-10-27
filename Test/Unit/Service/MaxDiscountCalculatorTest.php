@@ -200,6 +200,176 @@ class MaxDiscountCalculatorTest extends TestCase
         $this->assertEqualsWithDelta(25.0, $result->ruleDiscountPercent, 0.01);
     }
 
+    /**
+     * Characterization: the cap is kept at four decimals and is NOT rounded to currency precision.
+     *
+     * Regular 19.99, catalog rule 10% (final 17.99), coupon 15% with bypass: the rule would give
+     * 2.9985 off the regular price, the product already has 2.00 off, so the cap is 0.9985.
+     *
+     * This is intentional. Magento itself rounds discounts with carried deltas
+     * (SalesRule\Model\Utility::deltaRoundingFix), and rounding the cap here on its own would
+     * introduce drift between line items and totals. Do not change it without checking a real
+     * checkout against a payment provider's line-item totals.
+     */
+    public function testCapKeepsFourDecimalsAndIsNotRoundedToCents(): void
+    {
+        $product = $this->createProductMock(19.99, 17.99);
+        $rule = $this->createRuleMock(Rule::BY_PERCENT_ACTION, 15.0);
+
+        $single = $this->calculator->calculate($product, $rule, 1.0);
+        $triple = $this->calculator->calculate($product, $rule, 3.0);
+
+        $this->assertSame(BypassResultType::ADJUSTED, $single->type);
+        $this->assertSame(0.9985, $single->additionalDiscount);
+        $this->assertSame(0.9985, $single->maxAllowedTotal);
+        $this->assertSame(2.9985, $single->ruleDiscountFromRegular);
+        $this->assertSame(2.0, $single->existingDiscountAmount);
+        $this->assertSame(0.9985, $triple->additionalDiscount);
+        $this->assertSame(2.9955, $triple->maxAllowedTotal, 'The line cap is per-unit cap × qty, rounded once');
+    }
+
+    public function testAmountsAreRoundedToFourDecimals(): void
+    {
+        // 15.5% of 19.99 = 3.09845; Magento stores catalog prices with up to six decimals.
+        $product = $this->createProductMock(19.99, 17.45678);
+        $rule = $this->createRuleMock(Rule::BY_PERCENT_ACTION, 15.5);
+
+        $result = $this->calculator->calculate($product, $rule, 2.0);
+
+        $this->assertSame(3.0985, $result->ruleDiscountFromRegular);
+        $this->assertSame(2.5332, $result->existingDiscountAmount);
+        $this->assertSame(0.5652, $result->additionalDiscount);
+        $this->assertSame(1.1305, $result->maxAllowedTotal);
+    }
+
+    public function testPercentagesAreRoundedToTwoDecimals(): void
+    {
+        // existing 2.00 / 19.99 = 10.005 %, fixed rule 3.00 / 19.99 = 15.0075 %
+        $product = $this->createProductMock(19.99, 17.99);
+        $rule = $this->createRuleMock(Rule::BY_FIXED_ACTION, 3.0);
+
+        $result = $this->calculator->calculate($product, $rule, 1.0);
+
+        $this->assertSame(10.01, $result->existingDiscountPercent);
+        $this->assertSame(15.01, $result->ruleDiscountPercent);
+    }
+
+    /**
+     * The #8 fix: a line is only ADJUSTED when the additional discount is at least one cent
+     * across the whole line, so per-unit sub-cent amounts count once qty makes them a cent.
+     *
+     * @dataProvider lineCentThresholdProvider
+     */
+    public function testAdjustedNeedsAtLeastOneCentAcrossTheLine(
+        float $finalPrice,
+        float $qty,
+        BypassResultType $expected,
+    ): void {
+        $product = $this->createProductMock(100.0, $finalPrice);
+        $rule = $this->createRuleMock(Rule::BY_FIXED_ACTION, 10.0);
+
+        $result = $this->calculator->calculate($product, $rule, $qty);
+
+        $this->assertSame($expected, $result->type);
+    }
+
+    /**
+     * @return array<string, array{float, float, BypassResultType}>
+     */
+    public static function lineCentThresholdProvider(): array
+    {
+        return [
+            'half a cent per unit, qty 1' => [90.005, 1.0, BypassResultType::EXISTING_BETTER],
+            'half a cent per unit, qty 2 = one cent' => [90.005, 2.0, BypassResultType::ADJUSTED],
+            'one cent per unit, qty 1' => [90.01, 1.0, BypassResultType::ADJUSTED],
+            'a tenth of a cent per unit, qty 5' => [90.001, 5.0, BypassResultType::EXISTING_BETTER],
+        ];
+    }
+
+    public function testExistingBetterReportsNoAdditionalDiscountButKeepsTheComparison(): void
+    {
+        $product = $this->createProductMock(100.0, 75.0);
+        $rule = $this->createRuleMock(Rule::BY_PERCENT_ACTION, 20.0);
+
+        $result = $this->calculator->calculate($product, $rule, 2.0);
+
+        $this->assertSame(BypassResultType::EXISTING_BETTER, $result->type);
+        $this->assertSame(0.0, $result->additionalDiscount);
+        $this->assertSame(0.0, $result->maxAllowedTotal);
+        $this->assertSame(25.0, $result->existingDiscountAmount);
+        $this->assertSame(20.0, $result->ruleDiscountFromRegular);
+        $this->assertSame(25.0, $result->existingDiscountPercent);
+        $this->assertSame(20.0, $result->ruleDiscountPercent);
+    }
+
+    public function testStackingFallbackCarriesNoComparisonAmounts(): void
+    {
+        $product = $this->createProductMock(100.0, 75.0);
+        $rule = $this->createRuleMock(Rule::CART_FIXED_ACTION, 20.0);
+
+        $result = $this->calculator->calculate($product, $rule, 1.0);
+
+        $this->assertSame(BypassResultType::STACKING_FALLBACK, $result->type);
+        $this->assertSame(0.0, $result->existingDiscountAmount);
+        $this->assertSame(0.0, $result->ruleDiscountFromRegular);
+        $this->assertSame(0.0, $result->existingDiscountPercent);
+        $this->assertSame(0.0, $result->ruleDiscountPercent);
+        $this->assertSame(0.0, $result->maxAllowedTotal);
+    }
+
+    public function testZeroRegularPriceNeverGetsAFixedDiscount(): void
+    {
+        $product = $this->createProductMock(0.0, 0.0);
+        $rule = $this->createRuleMock(Rule::BY_FIXED_ACTION, 5.0);
+
+        $result = $this->calculator->calculate($product, $rule, 1.0);
+
+        $this->assertSame(BypassResultType::EXISTING_BETTER, $result->type);
+        $this->assertSame(0.0, $result->maxAllowedTotal);
+        $this->assertSame(0.0, $result->existingDiscountAmount);
+        $this->assertSame(0.0, $result->ruleDiscountFromRegular);
+        $this->assertSame(0.0, $result->existingDiscountPercent);
+        $this->assertSame(0.0, $result->ruleDiscountPercent);
+    }
+
+    public function testUnknownActionOnFullPriceProductGivesNoDiscount(): void
+    {
+        $product = $this->createProductMock(100.0, 100.0);
+        $rule = $this->createRuleMock('ampromo_items', 1.0);
+
+        $result = $this->calculator->calculate($product, $rule, 1.0);
+
+        $this->assertSame(BypassResultType::EXISTING_BETTER, $result->type);
+        $this->assertSame(0.0, $result->ruleDiscountFromRegular);
+        $this->assertSame(0.0, $result->maxAllowedTotal);
+    }
+
+    /**
+     * Magento returns prices and rule amounts from the database as numeric strings.
+     */
+    public function testAcceptsNumericStringsAsMagentoReturnsThem(): void
+    {
+        $product = $this->createMock(Product::class);
+        $product->method('getPrice')->willReturn('100.000000');
+        $product->method('getFinalPrice')->willReturn('92.500000');
+
+        $rule = $this->getMockBuilder(Rule::class)
+            ->disableOriginalConstructor()
+            ->addMethods(['getDiscountAmount'])
+            ->onlyMethods(['getSimpleAction'])
+            ->getMock();
+        $rule->method('getSimpleAction')->willReturn(Rule::BY_FIXED_ACTION);
+        $rule->method('getDiscountAmount')->willReturn('10.0000');
+
+        $result = $this->calculator->calculate($product, $rule, 1.0);
+
+        $this->assertSame(BypassResultType::ADJUSTED, $result->type);
+        $this->assertSame(100.0, $result->regularPrice);
+        $this->assertSame(92.5, $result->currentPrice);
+        $this->assertSame(10.0, $result->ruleDiscountFromRegular);
+        $this->assertSame(2.5, $result->maxAllowedTotal);
+    }
+
     private function createProductMock(float $regularPrice, float $finalPrice): Product&MockObject
     {
         $product = $this->createMock(Product::class);
