@@ -230,16 +230,17 @@ class MaxDiscountCalculatorTest extends TestCase
 
     public function testAmountsAreRoundedToFourDecimals(): void
     {
-        // 15.5% of 19.99 = 3.09845; Magento stores catalog prices with up to six decimals.
+        // 15.4% of 19.99 = 3.07846; Magento stores catalog prices with up to six decimals. The inputs avoid
+        // exact halves: PHP 8.4 changed how round() treats them (3.09845 gives 3.0985 on 8.3, 3.0984 on 8.4+).
         $product = $this->createProductMock(19.99, 17.45678);
-        $rule = $this->createRuleMock(Rule::BY_PERCENT_ACTION, 15.5);
+        $rule = $this->createRuleMock(Rule::BY_PERCENT_ACTION, 15.4);
 
         $result = $this->calculator->calculate($product, $rule, 2.0);
 
-        $this->assertSame(3.0985, $result->ruleDiscountFromRegular);
+        $this->assertSame(3.0785, $result->ruleDiscountFromRegular);
         $this->assertSame(2.5332, $result->existingDiscountAmount);
-        $this->assertSame(0.5652, $result->additionalDiscount);
-        $this->assertSame(1.1305, $result->maxAllowedTotal);
+        $this->assertSame(0.5452, $result->additionalDiscount);
+        $this->assertSame(1.0905, $result->maxAllowedTotal);
     }
 
     public function testPercentagesAreRoundedToTwoDecimals(): void
