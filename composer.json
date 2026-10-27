@@ -1,8 +1,18 @@
 {
     "name": "pixelperfectat/magento2-module-discount-exclusion",
     "description": "Advanced Magento 2 module for preventing additional discounts on already discounted products using a flexible, extensible strategy pattern. Provides out-of-the-box support for excluding products with special prices or catalog price rules from further discounting via shopping cart rules.",
-    "type": "magento2-module",
     "license": "MIT",
+    "type": "magento2-module",
+    "keywords": [
+        "magento",
+        "magento2",
+        "magento2-module",
+        "discount",
+        "coupon",
+        "cart-price-rule",
+        "special-price",
+        "catalog-price-rule"
+    ],
     "authors": [
         {
             "name": "André Flitsch",
@@ -12,62 +22,74 @@
     ],
     "support": {
         "email": "pixelhed@pixelperfect.at",
-        "issues": "https://github.com/pixelperfectat/magento2-module-discount-exclusion/issues"
+        "issues": "https://github.com/pixelperfectat/magento2-module-discount-exclusion/issues",
+        "source": "https://github.com/pixelperfectat/magento2-module-discount-exclusion"
     },
     "require": {
         "php": "^8.3",
         "magento/framework": "^103.0",
         "magento/module-catalog": "^104.0",
-        "magento/module-sales-rule": "^101.0"
+        "magento/module-catalog-rule": "^101.0",
+        "magento/module-checkout": "^100.4",
+        "magento/module-config": "^101.0",
+        "magento/module-customer": "^103.0",
+        "magento/module-quote": "^101.0",
+        "magento/module-sales-rule": "^101.0",
+        "magento/module-store": "^101.0"
     },
     "require-dev": {
+        "infection/infection": "^0.35",
         "phpunit/phpunit": "^9.6",
-        "pixelperfectat/coding-standard": "^0.1.0"
-    },
-    "autoload": {
-        "files": [
-            "src/registration.php"
-        ],
-        "psr-4": {
-            "PixelPerfect\\DiscountExclusion\\": "src"
-        }
-    },
-    "autoload-dev": {
-        "psr-4": {
-            "PixelPerfect\\DiscountExclusion\\Test\\": "Test"
-        }
-    },
-    "scripts": {
-        "lint": "parallel-lint --exclude vendor .",
-        "cs": "phpcs",
-        "cs:fix": "phpcbf",
-        "stan": "phpstan analyse",
-        "test": "phpunit",
-        "ci:validate": "@composer validate --no-check-publish",
-        "check": [
-            "@ci:validate",
-            "@lint",
-            "@cs",
-            "@stan",
-            "@test"
-        ]
-    },
-    "config": {
-        "sort-packages": true,
-        "allow-plugins": {
-            "cweagans/composer-patches": true,
-            "dealerdirect/phpcodesniffer-composer-installer": true,
-            "ergebnis/composer-normalize": true,
-            "laminas/laminas-dependency-plugin": true,
-            "magento/*": true,
-            "php-http/discovery": true,
-            "phpstan/extension-installer": true
-        }
+        "pixelperfectat/coding-standard": "^0.2.0"
     },
     "repositories": [
         {
             "type": "composer",
             "url": "https://repo.magento.com/"
         }
-    ]
+    ],
+    "autoload": {
+        "psr-4": {
+            "PixelPerfect\\DiscountExclusion\\": "src"
+        },
+        "files": [
+            "src/registration.php"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "PixelPerfect\\DiscountExclusion\\Test\\": "Test"
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "cweagans/composer-patches": true,
+            "dealerdirect/phpcodesniffer-composer-installer": true,
+            "ergebnis/composer-normalize": true,
+            "infection/extension-installer": true,
+            "laminas/laminas-dependency-plugin": true,
+            "magento/*": true,
+            "php-http/discovery": true,
+            "phpstan/extension-installer": true
+        },
+        "sort-packages": true
+    },
+    "scripts": {
+        "check": [
+            "@ci:validate",
+            "@lint",
+            "@cs",
+            "@stan",
+            "@test",
+            "@infection"
+        ],
+        "ci:normalize": "@composer normalize --dry-run --diff",
+        "ci:validate": "@composer validate --no-check-publish",
+        "cs": "phpcs",
+        "cs:fix": "phpcbf",
+        "infection": "infection --with-uncovered --min-msi=87 --min-covered-msi=87 --threads=max",
+        "lint": "parallel-lint --exclude vendor --exclude generated .",
+        "stan": "phpstan analyse",
+        "test": "phpunit"
+    }
 }

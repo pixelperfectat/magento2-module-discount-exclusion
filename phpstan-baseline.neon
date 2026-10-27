@@ -1,61 +1,19 @@
 parameters:
 	ignoreErrors:
 		-
-			message: "#^Call to method setBypassDiscountExclusion\\(\\) on an unknown class Magento\\\\SalesRule\\\\Api\\\\Data\\\\RuleExtension\\.$#"
-			count: 1
-			path: src/Plugin/SalesRule/Model/Converter/ToDataModelPlugin.php
-
-		-
-			message: "#^Call to method setBypassDiscountExclusion\\(\\) on an unknown class Magento\\\\SalesRule\\\\Api\\\\Data\\\\RuleExtensionInterface\\.$#"
-			count: 1
-			path: src/Plugin/SalesRule/Model/Converter/ToDataModelPlugin.php
-
-		-
-			message: "#^Call to method getBypassDiscountExclusion\\(\\) on an unknown class Magento\\\\SalesRule\\\\Api\\\\Data\\\\RuleExtensionInterface\\.$#"
-			count: 2
-			path: src/Plugin/SalesRule/Model/Converter/ToModelPlugin.php
-
-		-
-			message: "#^If condition is always true\\.$#"
-			count: 1
-			path: src/Plugin/SalesRule/Model/ValidatorPlugin.php
-
-		-
-			message: "#^Method PixelPerfect\\\\DiscountExclusion\\\\Plugin\\\\SalesRule\\\\Model\\\\ValidatorPlugin\\:\\:getCouponCode\\(\\) is unused\\.$#"
-			count: 1
-			path: src/Plugin/SalesRule/Model/ValidatorPlugin.php
-
-		-
-			message: "#^Method PixelPerfect\\\\DiscountExclusion\\\\Plugin\\\\SalesRule\\\\Model\\\\ValidatorPlugin\\:\\:handleBypass\\(\\) is unused\\.$#"
-			count: 1
-			path: src/Plugin/SalesRule/Model/ValidatorPlugin.php
-
-		-
-			message: "#^Method PixelPerfect\\\\DiscountExclusion\\\\Plugin\\\\SalesRule\\\\Model\\\\ValidatorPlugin\\:\\:handleStandardExclusion\\(\\) is unused\\.$#"
-			count: 1
-			path: src/Plugin/SalesRule/Model/ValidatorPlugin.php
-
-		-
-			message: "#^Right side of && is always true\\.$#"
-			count: 1
-			path: src/Plugin/SalesRule/Model/ValidatorPlugin.php
-
-		-
-			message: "#^Unreachable statement \\- code above always terminates\\.$#"
-			count: 1
-			path: src/Plugin/SalesRule/Model/ValidatorPlugin.php
-
-		-
-			message: "#^Left side of && is always true\\.$#"
+			message: '#^Left side of && is always true\.$#'
+			identifier: booleanAnd.leftAlwaysTrue
 			count: 1
 			path: src/Service/MessageProcessor.php
 
 		-
-			message: "#^Negated boolean expression is always false\\.$#"
+			message: '#^Negated boolean expression is always false\.$#'
+			identifier: booleanNot.alwaysFalse
 			count: 1
 			path: src/Service/MessageProcessor.php
 
 		-
-			message: "#^Ternary operator condition is always true\\.$#"
+			message: '#^Ternary operator condition is always true\.$#'
+			identifier: ternary.alwaysTrue
 			count: 1
 			path: src/Service/MessageProcessor.php

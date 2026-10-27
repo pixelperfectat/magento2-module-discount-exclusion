@@ -43,6 +43,8 @@ class ToDataModelPluginTest extends TestCase
         $extensionAttributes = $this->createExtensionAttributesMock();
         $dataModel = $this->createDataModelMock($extensionAttributes);
 
+        // Existing extension attributes (possibly set by other modules) must be reused, not replaced.
+        $this->extensionFactory->expects($this->never())->method('create');
         $extensionAttributes->expects($this->once())
             ->method('setBypassDiscountExclusion')
             ->with(true);

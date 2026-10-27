@@ -9,6 +9,10 @@ use PixelPerfect\DiscountExclusion\Model\MessageGroups;
 use PixelPerfect\DiscountExclusion\Model\SessionKeys;
 use Psr\Log\LoggerInterface;
 
+/**
+ * @deprecated Removal planned for 2.0.0. Nothing in the module calls it any more.
+ * @see \PixelPerfect\DiscountExclusion\Api\ExclusionMessageBuilderInterface
+ */
 class MessageProcessor implements MessageProcessorInterface
 {
     public function __construct(

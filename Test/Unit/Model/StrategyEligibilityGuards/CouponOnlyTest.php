@@ -89,4 +89,32 @@ class CouponOnlyTest extends TestCase
 
         $this->assertTrue($result, 'Coupon-based rules should return true to apply exclusion logic');
     }
+
+    /**
+     * Rule models loaded from the database return coupon_type as a numeric string.
+     *
+     * @dataProvider couponTypeStringProvider
+     */
+    public function testCouponTypeFromDatabaseString(string $couponType, bool $expected): void
+    {
+        $rule = $this->getMockBuilder(Rule::class)
+            ->disableOriginalConstructor()
+            ->addMethods(['getCouponType'])
+            ->getMock();
+        $rule->method('getCouponType')->willReturn($couponType);
+
+        $this->assertSame($expected, $this->guard->canProcess($this->product, $this->item, $rule));
+    }
+
+    /**
+     * @return array<string, array{string, bool}>
+     */
+    public static function couponTypeStringProvider(): array
+    {
+        return [
+            'automatic rule' => ['1', false],
+            'specific coupon' => ['2', true],
+            'auto-generated coupons' => ['3', true],
+        ];
+    }
 }

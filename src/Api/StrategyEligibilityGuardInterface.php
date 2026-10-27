@@ -1,8 +1,8 @@
 <?php
 declare(strict_types=1);
 /**
- * Copyright © André Flitsch. All rights reserved.
- * See license.md for license details.
+ * Copyright (c) 2026 Pixelperfect
+ * Licensed under the MIT License. See the LICENSE file for details.
  */
 
 namespace PixelPerfect\DiscountExclusion\Api;

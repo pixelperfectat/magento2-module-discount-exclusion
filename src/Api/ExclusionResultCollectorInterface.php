@@ -26,19 +26,24 @@ interface ExclusionResultCollectorInterface
 
     /**
      * Check if there are any excluded items at all
+     *
+     * @deprecated Removal planned for 2.0.0. Not used by the module.
+     * @see self::hasExcludedItems()
      */
     public function hasAnyExcludedItems(): bool;
 
     /**
      * Get all excluded items for a coupon code
      *
-     * @return array<string, array{name: string, reason: string}>
+     * @return array<int|string, array{name: string, reason: string}>
      */
     public function getExcludedItems(string $couponCode): array;
 
     /**
      * Get all coupon codes that have excluded items
      *
+     * @deprecated Removal planned for 2.0.0. Not used by the module.
+     * @see self::hasExcludedItems()
      * @return string[]
      */
     public function getCouponCodes(): array;
@@ -65,13 +70,20 @@ interface ExclusionResultCollectorInterface
 
     /**
      * Check if there are any bypassed items at all
+     *
+     * @deprecated Removal planned for 2.0.0. Not used by the module.
+     * @see self::hasBypassedItems()
      */
     public function hasAnyBypassedItems(): bool;
 
     /**
      * Get all bypassed items for a coupon code
      *
-     * @return array<string, array{name: string, type: BypassResultType, messageParams: array<string, float|string>}>
+     * @return array<int|string, array{
+     *     name: string,
+     *     type: BypassResultType,
+     *     messageParams: array<string, float|string>
+     * }>
      */
     public function getBypassedItems(string $couponCode): array;
 

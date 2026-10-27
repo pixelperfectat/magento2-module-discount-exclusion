@@ -2,6 +2,12 @@
 
 namespace PixelPerfect\DiscountExclusion\Api;
 
+/**
+ * @deprecated Removal planned for 2.0.0. Nothing in the module calls it any more.
+ *             Messages are built by ExclusionMessageBuilderInterface and queued in the checkout
+ *             session by the cart observers.
+ * @see ExclusionMessageBuilderInterface
+ */
 interface MessageProcessorInterface
 {
     /**
