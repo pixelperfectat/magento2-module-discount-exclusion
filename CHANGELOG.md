@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-28
+
 ### Added
 
 - Unit tests for `CouponPostObserver`, `DataProviderPlugin` and the store-scoped config flags, plus exact-text tests for every customer message and characterization tests that pin the current four-decimal bypass cap.
@@ -105,7 +107,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Translations for en_US, de_DE, it_IT, fr_FR, es_ES
 - Unit tests for all core components
 
-[Unreleased]: https://github.com/pixelperfectat/magento2-module-discount-exclusion/compare/1.0.2...HEAD
+[Unreleased]: https://github.com/pixelperfectat/magento2-module-discount-exclusion/compare/1.1.0...HEAD
+[1.1.0]: https://github.com/pixelperfectat/magento2-module-discount-exclusion/compare/1.0.2...1.1.0
 [1.0.2]: https://github.com/pixelperfectat/magento2-module-discount-exclusion/compare/1.0.1...1.0.2
 [1.0.1]: https://github.com/pixelperfectat/magento2-module-discount-exclusion/compare/1.0.0...1.0.1
 [1.0.0]: https://github.com/pixelperfectat/magento2-module-discount-exclusion/compare/0.2.1...1.0.0
