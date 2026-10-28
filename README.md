@@ -1,5 +1,10 @@
 # PixelPerfect Discount Exclusion
 
+[![CI](https://github.com/pixelperfectat/magento2-module-discount-exclusion/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pixelperfectat/magento2-module-discount-exclusion/actions/workflows/ci.yml)
+[![Packagist version](https://img.shields.io/packagist/v/pixelperfectat/magento2-module-discount-exclusion)](https://packagist.org/packages/pixelperfectat/magento2-module-discount-exclusion)
+[![PHP](https://img.shields.io/packagist/dependency-v/pixelperfectat/magento2-module-discount-exclusion/php)](composer.json)
+[![License: MIT](https://img.shields.io/packagist/l/pixelperfectat/magento2-module-discount-exclusion)](LICENSE)
+
 Extensible Magento 2 module that prevents applying shopping cart (sales rule) discounts to products already discounted by other mechanisms.
 
 Status: Stable. Follows [semantic versioning](https://semver.org/) from 1.0.0.
